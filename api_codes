@@ -1,0 +1,246 @@
+//program.cs
+
+using EnergyDashboardAPI1.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace EnergyDashboardAPI1
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            var builder = WebApplication.CreateBuilder(args);
+
+            // Add services to the container.
+
+            builder.Services.AddControllers();
+            builder.Services.AddDbContext<EnergyDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+            // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+            builder.Services.AddOpenApi();
+
+            var app = builder.Build();
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+
+            // Configure the HTTP request pipeline.
+            if (app.Environment.IsDevelopment())
+            {
+                app.MapOpenApi();
+            }
+
+            app.UseHttpsRedirection();
+
+            app.UseAuthorization();
+
+
+            app.MapControllers();
+
+            app.Run();
+        }
+    }
+}
+
+
+//EnergyDbContext.cs
+using System;
+using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;  
+
+namespace EnergyDashboardAPI1.Models;
+
+public partial class EnergyDbContext : DbContext
+{
+    public EnergyDbContext()
+    {
+    }
+
+    public EnergyDbContext(DbContextOptions<EnergyDbContext> options)
+        : base(options)
+    {
+    }
+
+    public virtual DbSet<Meter> Meters { get; set; }
+
+    public virtual DbSet<MeterReading> MeterReadings { get; set; }
+
+    public virtual DbSet<Space> Spaces { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseSqlServer("Server=DESKTOP-9E696H1\\SQLEXPRESS01;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;");
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Meter>(entity =>
+        {
+            entity.HasKey(e => e.MeterId).HasName("PK__Meters__59223B8CC59C0DFE");
+
+            entity.Property(e => e.MeterId).HasColumnName("MeterID");
+            entity.Property(e => e.MeterName)
+                .HasMaxLength(100)
+                .IsUnicode(false);
+            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
+
+            entity.HasOne(d => d.Space).WithMany(p => p.Meters)
+                .HasForeignKey(d => d.SpaceId)
+                .HasConstraintName("FK__Meters__SpaceID__3A81B327");
+        });
+
+        modelBuilder.Entity<MeterReading>(entity =>
+        {
+            entity.HasKey(e => e.ReadingId).HasName("PK__MeterRea__C80F9C6E85E94364");
+
+            entity.Property(e => e.ReadingId).HasColumnName("ReadingID");
+            entity.Property(e => e.MeterId).HasColumnName("MeterID");
+            entity.Property(e => e.ReadingTimestamp).HasColumnType("datetime");
+
+            entity.HasOne(d => d.Meter).WithMany(p => p.MeterReadings)
+                .HasForeignKey(d => d.MeterId)
+                .HasConstraintName("FK__MeterRead__Meter__3D5E1FD2");
+        });
+
+        modelBuilder.Entity<Space>(entity =>
+        {
+            entity.HasKey(e => e.SpaceId).HasName("PK__Spaces__83E25E0E28BAD6A3");
+
+            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
+            entity.Property(e => e.ParentSpaceId).HasColumnName("ParentSpaceID");
+            entity.Property(e => e.SpaceName)
+                .HasMaxLength(100)
+                .IsUnicode(false);
+            entity.Property(e => e.SpaceType)
+                .HasMaxLength(50)
+                .IsUnicode(false);
+
+            entity.HasOne(d => d.ParentSpace).WithMany(p => p.InverseParentSpace)
+                .HasForeignKey(d => d.ParentSpaceId)
+                .HasConstraintName("FK__Spaces__ParentSp__37A5467C");
+        });
+
+        OnModelCreatingPartial(modelBuilder);
+    }
+
+    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
+}
+
+
+//appsettings.json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=DESKTOP-9E696H1\\SQLEXPRESS01;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;"
+  },
+  "AllowedHosts": "*"
+}
+
+
+//SpacesController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class SpacesController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public SpacesController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult> GetSpaces()
+        {
+            try
+            {
+                var spaces = await _context.Spaces
+                    .Select(s => new
+                    {
+                        s.SpaceId,
+                        s.SpaceName
+                    })
+                    .ToListAsync();
+
+                return Ok(spaces);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error: " + ex.Message);
+            }
+        }
+    }
+}
+
+//MetersController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MetersController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public MetersController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Meter>>> GetMeters()
+        {
+            return await _context.Meters.ToListAsync();
+        }
+    }
+}
+
+//MeterReadingsController.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MeterReadingsController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public MeterReadingsController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<MeterReading>>> GetMeterReadings()
+        {
+            return await _context.MeterReadings.ToListAsync();
+        }
+    }
+}
