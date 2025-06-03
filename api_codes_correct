@@ -1,0 +1,657 @@
+//program.cs
+
+using EnergyDashboardAPI1.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace EnergyDashboardAPI1
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            var builder = WebApplication.CreateBuilder(args);
+
+
+            builder.Services.AddControllers();
+            builder.Services.AddDbContext<EnergyDbContext>(options =>
+   options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+
+            builder.Services.AddControllers()
+            .AddJsonOptions(options =>
+             {
+                  options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+                 options.JsonSerializerOptions.WriteIndented = true;
+             });
+            builder.Services.AddOpenApi();
+
+            var app = builder.Build();
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.MapOpenApi();
+            }
+
+            app.UseHttpsRedirection();
+
+            app.UseAuthorization();
+
+
+            app.MapControllers();
+
+            app.Run();
+        }
+    }
+}
+
+
+//energydbcontext.cs
+
+using System;
+using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;  
+
+namespace EnergyDashboardAPI1.Models;
+
+public partial class EnergyDbContext : DbContext
+{
+    public EnergyDbContext()
+    {
+    }
+
+    public EnergyDbContext(DbContextOptions<EnergyDbContext> options)
+        : base(options)
+    {
+    }
+
+    public virtual DbSet<Meter> Meters { get; set; }
+
+    public virtual DbSet<MeterReading> MeterReadings { get; set; }
+
+    public virtual DbSet<Space> Spaces { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+
+        => optionsBuilder.UseSqlServer("Server=DESKTOP-9E696H1\\SQLEXPRESS01;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;");
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Meter>(entity =>
+        {
+            entity.HasKey(e => e.MeterID).HasName("PK__Meters__59223B8CC59C0DFE");
+
+            entity.Property(e => e.MeterID).HasColumnName("MeterID");
+            entity.Property(e => e.MeterName)
+                .HasMaxLength(100)
+                .IsUnicode(false);
+            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
+
+            entity.HasOne(d => d.Space).WithMany(p => p.Meters)
+                .HasForeignKey(d => d.SpaceId)
+                .HasConstraintName("FK__Meters__SpaceID__3A81B327");
+        });
+
+        modelBuilder.Entity<MeterReading>(entity =>
+        {
+            entity.HasKey(e => new { e.MeterID, e.ReadingTimestamp }); // composite key
+
+            entity.Property(e => e.MeterID).HasColumnName("MeterID");
+            entity.Property(e => e.ReadingTimestamp).HasColumnType("datetime");
+            entity.Property(e => e.Value).HasColumnName("Value");
+
+            entity.HasOne(e => e.Meter)
+                  .WithMany(m => m.MeterReadings)
+                  .HasForeignKey(e => e.MeterID)
+                  .HasConstraintName("FK_MeterReading_Meter");
+        });
+
+        modelBuilder.Entity<Space>(entity =>
+        {
+            entity.HasKey(e => e.SpaceId).HasName("PK__Spaces__83E25E0E28BAD6A3");
+
+            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
+            entity.Property(e => e.ParentSpaceId).HasColumnName("ParentSpaceID");
+            entity.Property(e => e.SpaceName)
+                .HasMaxLength(100)
+                .IsUnicode(false);
+            entity.Property(e => e.SpaceType)
+                .HasMaxLength(50)
+                .IsUnicode(false);
+
+            entity.HasOne(d => d.ParentSpace).WithMany(p => p.InverseParentSpace)
+                .HasForeignKey(d => d.ParentSpaceId)
+                .HasConstraintName("FK__Spaces__ParentSp__37A5467C");
+        });
+
+        OnModelCreatingPartial(modelBuilder);
+    }
+
+    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
+}
+
+
+//spaces.cs
+using System;
+using System.Collections.Generic;
+
+namespace EnergyDashboardAPI1.Models;
+
+public partial class Space
+{
+    public int SpaceId { get; set; }
+
+    public int? ParentSpaceId { get; set; }
+
+    public string? SpaceName { get; set; }
+
+    public string? SpaceType { get; set; }
+
+    public virtual ICollection<Space> InverseParentSpace { get; set; } = new List<Space>();
+
+    public virtual ICollection<Meter> Meters { get; set; } = new List<Meter>();
+
+    public virtual Space? ParentSpace { get; set; }
+}
+
+
+//meter.cs
+using System;
+using System.Collections.Generic;
+
+namespace EnergyDashboardAPI1.Models;
+
+public partial class Meter
+{
+    public int MeterID { get; set; }
+
+    public int SpaceId { get; set; }
+
+    public string? MeterName { get; set; }
+
+    public virtual ICollection<MeterReading> MeterReadings { get; set; } = new List<MeterReading>();
+
+    public virtual Space Space { get; set; }
+}
+
+
+//meterreading.cs
+using System;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace EnergyDashboardAPI1.Models
+{
+    public class MeterReading
+    {
+        public int MeterID { get; set; }
+        public DateTime ReadingTimestamp { get; set; }
+
+        public decimal Value { get; set; }
+
+        public Meter Meter { get; set; }  
+    }
+}
+
+
+
+//spacescontroller.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class SpacesController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public SpacesController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult> GetSpaces()
+        {
+            try
+            {
+                var spaces = await _context.Spaces
+                    .Select(s => new
+                    {
+                        s.SpaceId,
+                        s.SpaceName
+                    })
+                    .ToListAsync();
+
+                return Ok(spaces);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Error: " + ex.Message);
+            }
+        }
+        [HttpGet("{id}/all-child-space-ids")]
+        public async Task<ActionResult<List<int>>> GetAllChildSpaceIds(int id)
+        {
+            var allSpaces = await _context.Spaces.ToListAsync();
+
+            List<int> result = new List<int> { id };
+            Queue<int> queue = new Queue<int>();
+            queue.Enqueue(id);
+
+            while (queue.Count > 0)
+            {
+                int current = queue.Dequeue();
+                var children = allSpaces
+                    .Where(s => s.ParentSpaceId == current)
+                    .Select(s => s.SpaceId)
+                    .ToList();
+
+                foreach (var child in children)
+                {
+                    result.Add(child);
+                    queue.Enqueue(child);
+                }
+            }
+
+            return result;
+        }
+    }
+}
+
+
+//metercontroller.cs
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using EnergyDashboardAPI1.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MetersController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public MetersController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Meter>>> GetMeters()
+        {
+            return await _context.Meters.ToListAsync();
+        }
+    }
+}
+
+
+//meterreadingscontroller.cs
+using EnergyDashboardAPI1.DTOs;
+using EnergyDashboardAPI1.DTOs.EnergyDashboardAPI1.DTOs;
+using EnergyDashboardAPI1.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MeterReadingsController : ControllerBase
+    {
+        private readonly EnergyDbContext _context;
+
+        public MeterReadingsController(EnergyDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet("meterreadings")]
+        public async Task<IActionResult> GetMeterReadings(
+    [FromQuery] int? spaceId = null,
+    [FromQuery] DateTime? startTime = null,
+    [FromQuery] DateTime? endTime = null)
+        {
+            try
+            {
+                IQueryable<MeterReading> query = _context.MeterReadings
+                    .Include(mr => mr.Meter)
+                    .ThenInclude(m => m.Space);
+
+                if (spaceId.HasValue)
+                {
+                    query = query.Where(mr => mr.Meter.SpaceId == spaceId.Value);
+                }
+                if (startTime.HasValue)
+                {
+                    query = query.Where(mr => mr.ReadingTimestamp >= startTime.Value);
+                }
+                if (endTime.HasValue)
+                {
+                    query = query.Where(mr => mr.ReadingTimestamp <= endTime.Value);
+                }
+
+                var result = await query.ToListAsync();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                
+                return StatusCode(500, new { message = "Internal server error", detail = ex.Message });
+            }
+        }
+
+        [HttpGet("energy-consumption/{meterId}")]
+        public async Task<IActionResult> GetEnergyConsumption(int meterId)
+        {
+            var readings = await _context.MeterReadings
+                .Where(r => r.MeterID == meterId)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            if (readings.Count < 2)
+                return Ok("Not enough data to calculate consumption.");
+
+            decimal totalConsumption = 0;
+
+            for (int i = 1; i < readings.Count; i++)
+            {
+                var prev = readings[i - 1].Value;
+                var curr = readings[i].Value;
+
+                if (curr >= prev) 
+                    totalConsumption += (curr - prev);
+            }
+
+            return Ok(new
+            {
+                MeterID = meterId,
+                TotalEnergyConsumed = totalConsumption
+            });
+        }
+        [HttpGet("energy-by-space/{spaceId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetEnergyBySpace(int spaceId)
+        {
+            
+            var allSpaces = await _context.Spaces.ToListAsync();
+
+            
+            List<int> childSpaceIds = new List<int> { spaceId };
+            Queue<int> queue = new Queue<int>();
+            queue.Enqueue(spaceId);
+
+            while (queue.Count > 0)
+            {
+                int current = queue.Dequeue();
+                var children = allSpaces
+                    .Where(s => s.ParentSpaceId == current)
+                    .Select(s => s.SpaceId)
+                    .ToList();
+
+                foreach (var child in children)
+                {
+                    childSpaceIds.Add(child);
+                    queue.Enqueue(child);
+                }
+            }
+
+            
+            var readings = await _context.MeterReadings
+                .Include(r => r.Meter)
+                .Where(r => childSpaceIds.Contains(r.Meter.SpaceId))
+                .OrderBy(r => r.MeterID)
+                .ThenBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            
+            var consumption = readings
+                .GroupBy(r => r.MeterID)
+                .Select(g => new
+                {
+                    MeterId = g.Key,
+                    TotalEnergyConsumed = g
+                        .OrderBy(r => r.ReadingTimestamp)
+                        .Select((r, index) => index == 0 ? 0 : r.Value - g.ElementAt(index - 1).Value)
+                        .Sum()
+                });
+
+            return Ok(consumption);
+        }
+
+        [HttpGet("energy-consumption-by-time")]
+        public async Task<IActionResult> GetEnergyConsumptionByTime(DateTime startTime, DateTime endTime)
+        {
+            Console.WriteLine($"[DEBUG] StartTime: {startTime}, EndTime: {endTime}");
+
+            var readings = await _context.MeterReadings
+                .Where(r => r.ReadingTimestamp >= startTime && r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.MeterID)
+                .ThenBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            Console.WriteLine($"[DEBUG] Found {readings.Count} readings");
+
+            return Ok(readings);
+        }
+
+
+
+
+        [HttpGet("energy-summary")]
+        public async Task<IActionResult> GetEnergySummary(
+        [FromQuery] List<int>? spaceIds,
+        [FromQuery] DateTime startTime,
+        [FromQuery] DateTime endTime)
+        {
+            if (startTime >= endTime)
+            {
+                return BadRequest("startTime must be before endTime.");
+            }
+
+            var meterQuery = _context.Meters.AsQueryable();
+
+            if (spaceIds != null && spaceIds.Any())
+            {
+                meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
+            }
+
+            var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
+
+            if (!meterIds.Any())
+            {
+                return Ok(new
+                {
+                    totalEnergyConsumption = 0,
+                    hourlyAggregated = new List<object>()
+                });
+            }
+
+            var readings = await _context.MeterReadings
+                .Where(r => meterIds.Contains(r.MeterID)
+                         && r.ReadingTimestamp >= startTime
+                         && r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            if (readings.Count < 2)
+            {
+                return Ok(new
+                {
+                    totalEnergyConsumption = 0,
+                    hourlyAggregated = new List<object>()
+                });
+            }
+
+            var hourlyAggregated = readings
+                .GroupBy(r => new { r.MeterID, Hour = r.ReadingTimestamp })
+                .Select(g => new
+                {
+                    MeterId = g.Key.MeterID,
+                    Timestamp = g.Key.Hour,
+                    Reading = g.OrderBy(r => r.ReadingTimestamp).First().Value
+                })
+                .OrderBy(r => r.Timestamp)
+                .ToList();
+
+            var groupedList = hourlyAggregated
+            .GroupBy(r => r.Timestamp)
+            .OrderBy(g => g.Key)
+            .ToList(); 
+
+            var hourlyGrouped = groupedList
+                .Select((g, index) =>
+                {
+                    var previousGroup = index > 0 ? groupedList[index - 1] : null;
+
+                    decimal totalDiff = 0;
+                    if (previousGroup != null)
+                    {
+                        foreach (var curr in g)
+                        {
+                            var prev = previousGroup.FirstOrDefault(p => p.MeterId == curr.MeterId);
+                            if (prev != null)
+                            {
+                                totalDiff += Math.Max(0, curr.Reading - prev.Reading);
+                            }
+                        }
+                    }
+
+                    return new
+                    {
+                        timestamp = g.Key,
+                        energyConsumed = Math.Round(totalDiff, 2)
+                    };
+                })
+                .Skip(1) 
+                .ToList();
+            
+
+            var totalEnergy = hourlyGrouped.Sum(h => h.energyConsumed);
+
+            return Ok(new
+            {
+                totalEnergyConsumption = Math.Round(totalEnergy, 2),
+                hourlyAggregated = hourlyGrouped
+            });
+        }
+
+
+
+        [HttpGet("space-wise-energy")]
+        public async Task<IActionResult> GetSpaceWiseEnergy(
+        [FromQuery] List<int>? spaceIds,
+        [FromQuery] DateTime startTime,
+        [FromQuery] DateTime endTime)
+        {
+            var meterQuery = _context.Meters.AsQueryable();
+
+            if (spaceIds != null && spaceIds.Any())
+            {
+                meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
+            }
+
+            var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
+
+            var readings = await _context.MeterReadings
+                .Where(r => meterIds.Contains(r.MeterID) && r.ReadingTimestamp >= startTime && r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            var groupedReadings = readings
+                .GroupBy(r => r.MeterID)
+                .ToList();
+
+            var spaceMeterMap = await _context.Meters
+                .Where(m => meterIds.Contains(m.MeterID))
+                .ToDictionaryAsync(m => m.MeterID, m => m.SpaceId);
+
+            var totalBySpace = new Dictionary<int, decimal>();
+            var hourlyBySpace = new Dictionary<int, Dictionary<DateTime, decimal>>();
+
+            foreach (var meterGroup in groupedReadings)
+            {
+                var readingsList = meterGroup.OrderBy(r => r.ReadingTimestamp).ToList();
+                for (int i = 1; i < readingsList.Count; i++)
+                {
+                    var prev = readingsList[i - 1];
+                    var curr = readingsList[i];
+
+                    if (curr.ReadingTimestamp.Subtract(prev.ReadingTimestamp).TotalHours != 1)
+                        continue;
+
+                    var diff = Math.Max(0, curr.Value - prev.Value);
+                    var hour = curr.ReadingTimestamp.AddMinutes(-curr.ReadingTimestamp.Minute).AddSeconds(-curr.ReadingTimestamp.Second).AddMilliseconds(-curr.ReadingTimestamp.Millisecond);
+                    if (!spaceMeterMap.TryGetValue(curr.MeterID, out var spaceId))
+                        continue;
+
+                    if (!totalBySpace.ContainsKey(spaceId))
+                        totalBySpace[spaceId] = 0;
+
+                    totalBySpace[spaceId] += diff;
+
+                    if (!hourlyBySpace.ContainsKey(spaceId))
+                        hourlyBySpace[spaceId] = new Dictionary<DateTime, decimal>();
+
+                    if (!hourlyBySpace[spaceId].ContainsKey(hour))
+                        hourlyBySpace[spaceId][hour] = 0;
+
+                    hourlyBySpace[spaceId][hour] += diff;
+                }
+            }
+
+            var result = new
+            {
+                totalBySpace = totalBySpace.Select(kvp => new
+                {
+                    spaceId = kvp.Key,
+                    energyConsumed = kvp.Value
+                }),
+                hourlyBySpace = hourlyBySpace.Select(kvp => new
+                {
+                    spaceId = kvp.Key,
+                    hourly = kvp.Value.Select(h => new
+                    {
+                        timestamp = h.Key,
+                        energyConsumed = h.Value
+                    })
+                })
+            };
+
+            return Ok(result);
+        }
+
+    }
+    }
+
+
+
+//energyconsumptiondto.cs
+namespace EnergyDashboardAPI1.DTOs
+{
+    namespace EnergyDashboardAPI1.DTOs
+    {
+        public class EnergyConsumptionDto
+        {
+            public int MeterID { get; set; }
+            public DateTime ReadingTimestamp { get; set; }
+            public decimal EnergyConsumed { get; set; }
+        }
+    }
+}
