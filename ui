@@ -1,0 +1,98 @@
+//energydata.js
+// src/types/EnergyData.js
+
+/**
+ * @typedef {Object} EnergyEntry
+ * @property {string} timestamp - The date and time in ISO format (e.g., "2024-01-01T01:00:00")
+ * @property {number} energyConsumed - Energy consumed in kWh
+ */
+
+/**
+ * @typedef {EnergyEntry[]} EnergyData
+ * An array of energy consumption records
+ */
+
+
+//energychart.js
+import React, { useState } from 'react';  // <-- import useState
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import mockData from '../data/mockEnergyData.json';
+
+/** @type {import('../types/EnergyData').EnergyData} */
+const data = mockData;
+
+const EnergyChart = () => {
+  const [chartType, setChartType] = useState('line');  
+
+  const chartData = {
+    categories: data.map(entry => new Date(entry.timestamp).toLocaleString()), 
+    values: data.map(entry => entry.energyConsumed)                            
+  };
+
+  const options = {
+    chart: {
+      type: chartType 
+    },
+    title: {
+      text: 'Hourly Energy Consumption'
+    },
+    xAxis: {
+      categories: chartData.categories,
+      title: {
+        text: 'Timestamp'
+      }
+    },
+    yAxis: {
+      title: {
+        text: 'Energy Consumed (kWh)'
+      }
+    },
+    series: [
+      {
+        name: 'Energy Consumed',
+        data: chartData.values
+      }
+    ]
+  };
+
+  const toggleChartType = () => {
+    setChartType(prev => (prev === 'line' ? 'column' : 'line'));
+  };
+
+  return (
+    <div>
+      <h2>Energy Consumption Chart</h2>
+      
+      <button onClick={toggleChartType} style={{ marginBottom: '10px' }}>
+        Switch to {chartType === 'line' ? 'Bar' : 'Line'}
+      </button>
+      
+      <HighchartsReact highcharts={Highcharts} options={options} />
+    </div>
+  );
+};
+
+export default EnergyChart;
+
+
+
+//app.tsx
+import React from 'react';
+import './App.css';
+import EnergyChart from './components/EnergyChart';
+
+function App() {
+  return (
+    <div className="App">
+      <h1>Energy Dashboard (Mock Data)</h1>
+      <EnergyChart />
+    </div>
+  );
+}
+
+export default App;
+
+
+
+
