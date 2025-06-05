@@ -11,6 +11,16 @@ namespace EnergyDashboardAPI1
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy
+                        .AllowAnyOrigin()
+                        .AllowAnyHeader()
+                        .AllowAnyMethod();
+                });
+            });
 
             builder.Services.AddControllers();
             builder.Services.AddDbContext<EnergyDbContext>(options =>
@@ -26,17 +36,27 @@ namespace EnergyDashboardAPI1
              });
             builder.Services.AddOpenApi();
 
+
             var app = builder.Build();
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
+                app.UseCors("AllowAll");
+
+                app.UseHttpsRedirection();
+                app.UseAuthorization();
+                app.MapControllers();
+                app.Run();
             }
+            ;
 
             if (app.Environment.IsDevelopment())
             {
                 app.MapOpenApi();
             }
+
+            app.UseMiddleware<ErrorHandlingMiddleware>();
 
             app.UseHttpsRedirection();
 
@@ -46,6 +66,7 @@ namespace EnergyDashboardAPI1
             app.MapControllers();
 
             app.Run();
+
         }
     }
 }
