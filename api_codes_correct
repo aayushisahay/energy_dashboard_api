@@ -22,6 +22,10 @@ namespace EnergyDashboardAPI1
                 });
             });
 
+builder.Services.AddDbContext<EnergyDashboardContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+
             builder.Services.AddControllers();
             builder.Services.AddDbContext<EnergyDbContext>(options =>
    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -676,3 +680,53 @@ namespace EnergyDashboardAPI1.DTOs
         }
     }
 }
+
+
+
+
+
+//sitescontroller.cs
+using EnergyDashboardAPI1.Models;
+using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+using EnergyDashboardAPI1.Models; // replace with actual namespace
+
+namespace EnergyDashboardAPI1.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class SitesController : ControllerBase
+    {
+        private readonly EnergyDashboardContext _context;
+
+        public SitesController(EnergyDashboardContext context)
+        {
+            _context = context;
+        }
+
+        // POST: api/Sites
+        [HttpPost]
+        public async Task<IActionResult> PostSite([FromBody] Site site)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            _context.Sites.Add(site);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetSite), new { id = site.SiteId }, site);
+        }
+
+        // Optional GET by ID for confirmation
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Site>> GetSite(int id)
+        {
+            var site = await _context.Sites.FindAsync(id);
+            if (site == null)
+                return NotFound();
+
+            return site;
+        }
+    }
+}
+
