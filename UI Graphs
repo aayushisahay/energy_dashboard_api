@@ -1,3 +1,5 @@
+// run " npm install bootstrap " in terminal before changing the code to implement the form //
+
 //EnergyChart.jsx
 
 import React, { useEffect, useState } from 'react';
@@ -213,6 +215,7 @@ export default EnergyChart;
 //app.js
 
 import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 import EnergyChart from './components/EnergyChart'; 
 function App() {
