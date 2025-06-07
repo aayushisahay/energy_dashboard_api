@@ -4,10 +4,19 @@ import React, { useEffect, useState } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { getEnergySummary, getSpaceWiseEnergy } from '../services/api';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const EnergyChart = () => {
   const [lineChartOptions, setLineChartOptions] = useState(null);
   const [pieChartOptions, setPieChartOptions] = useState(null);
+  const [formData, setFormData] = useState({
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: ''
+  });
+  const [submitStatus, setSubmitStatus] = useState('');
 
   const startTime = '2024-01-01T00:00:00';
   const endTime = '2024-04-30T23:00:00';
@@ -16,32 +25,37 @@ const EnergyChart = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-
         const lineData = await getEnergySummary(spaceIds, startTime, endTime);
 
         const categories = lineData.hourlyAggregated.map(item => {
           const date = new Date(item.timestamp);
-
-          return date.toLocaleString(undefined, { hour12: false, year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+          return date.toLocaleString(undefined, {
+            hour12: false,
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
         });
 
         const values = lineData.hourlyAggregated.map(item => item.energyConsumed);
 
         setLineChartOptions({
-         chart: { height: 400, width: 1000 },
-  title: { text: 'Energy Consumption Over Time' },
-  xAxis: {
-    categories,
-    labels: {
-      rotation: 45,
-      style: { fontSize: '10px' }
-    }
-  },
-  yAxis: { title: { text: 'Energy Consumed (kWh)' } },
-  series: [{ name: 'Date', data: values }],
-  tooltip: {
-    formatter: function () {
-      return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+          chart: { height: 400, width: 1200 },
+          title: { text: 'Energy Consumption Over Time' },
+          xAxis: {
+            categories,
+            labels: {
+              rotation: 45,
+              style: { fontSize: '10px' }
+            }
+          },
+          yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+          series: [{ name: 'Date', data: values }],
+          tooltip: {
+            formatter: function () {
+              return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
             }
           }
         });
@@ -73,7 +87,6 @@ const EnergyChart = () => {
             }
           }
         });
-
       } catch (error) {
         console.error("Error loading charts:", error);
       }
@@ -82,21 +95,113 @@ const EnergyChart = () => {
     fetchData();
   }, []);
 
+  const handleChange = (e) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+
+      console.log("Submitting site:", formData);
+      setSubmitStatus('Submitted successfully!');
+      setFormData({
+        siteName: '',
+        address: '',
+        contactPerson: '',
+        contactEmail: '',
+        contactPhone: ''
+      });
+    } catch (err) {
+      console.error(err);
+      setSubmitStatus('Submission failed.');
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px' }}>
-      <div style={{ width: '1300px', marginLeft: '0' }}>
+    <div className="container py-4">
+      {/* Line Chart */}
+      <div style={{ width: '1300px', marginBottom: '40px' }}>
         {lineChartOptions ? (
           <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
         ) : (
           <p>Loading line chart...</p>
         )}
       </div>
-      <div style={{ width: '520px', marginRight: '0' }}>
+
+      <div style={{ width: '520px', alignLeft: '0' }}>
         {pieChartOptions ? (
           <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
         ) : (
           <p>Loading pie chart...</p>
         )}
+      </div>
+
+      <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
+        <h4 className="mb-3">Add New Site</h4>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-3">
+            <label className="form-label">Site Name</label>
+            <input
+              type="text"
+              className="form-control"
+              name="siteName"
+              value={formData.siteName}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label">Address</label>
+            <input
+              type="text"
+              className="form-control"
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label">Contact Person</label>
+            <input
+              type="text"
+              className="form-control"
+              name="contactPerson"
+              value={formData.contactPerson}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label">Contact Email</label>
+            <input
+              type="email"
+              className="form-control"
+              name="contactEmail"
+              value={formData.contactEmail}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label">Contact Phone</label>
+            <input
+              type="text"
+              className="form-control"
+              name="contactPhone"
+              value={formData.contactPhone}
+              onChange={handleChange}
+            />
+          </div>
+
+          <button type="submit" className="btn btn-primary">Submit</button>
+          {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
+        </form>
       </div>
     </div>
   );
