@@ -832,5 +832,16 @@ public class ErrorHandlingMiddleware
             await context.Response.WriteAsync(json);
         }
     }
+
 }
 
+
+
+
+//apierror.cs
+public class ApiError
+{
+    public int StatusCode { get; set; }
+    public string Message { get; set; }
+    public string? Details { get; set; } 
+}
