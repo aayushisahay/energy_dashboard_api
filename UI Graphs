@@ -8,32 +8,19 @@ import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { getEnergySummary, getSpaceWiseEnergy } from '../services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 
 const EnergyChart = () => {
   const [lineChartOptions, setLineChartOptions] = useState(null);
   const [pieChartOptions, setPieChartOptions] = useState(null);
-  const [formData, setFormData] = useState({
-    siteName: '',
-    address: '',
-    contactPerson: '',
-    contactEmail: '',
-    contactPhone: ''
-  });
-  const [submitStatus, setSubmitStatus] = useState('');
-  const [spaceIds, setSpaceIds] = useState([1, 2, 3, 4, 6]);
-  const [startDate, setStartDate] = useState(new Date('2024-01-01T00:00:00'));
-  const [endDate, setEndDate] = useState(new Date('2024-04-30T23:59:00'));
+
+  const startTime = '2023-06-01T00:00:00';
+  const endTime = '2025-05-31T23:00:00';
+  const spaceIds = [1, 2, 3, 4, 6]; 
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Convert dates to ISO strings without timezone issues
-        const startTime = startDate.toISOString();
-        const endTime = endDate.toISOString();
-
-        const lineData = await getEnergySummary([1, 2, 3, 4, 6], startTime, endTime);
+        const lineData = await getEnergySummary(spaceIds, startTime, endTime);
 
         const categories = lineData.hourlyAggregated.map(item => {
           const date = new Date(item.timestamp);
@@ -68,14 +55,14 @@ const EnergyChart = () => {
           }
         });
 
-        const pieData = await getSpaceWiseEnergy([1, 2, 3, 4, 6], startTime, endTime);
-|        const pieSeries = pieData.totalBySpace
-        .sort((a, b) => b.energyConsumed - a.energyConsumed) 
-        .slice(0, 5) 
-        .map(space => ({
-          name: `Space ${space.spaceId}`,
-          y: space.energyConsumed
- |       }));
+        const pieData = await getSpaceWiseEnergy(spaceIds, startTime, endTime);
+        const pieSeries = pieData.totalBySpace
+          .sort((a, b) => b.energyConsumed - a.energyConsumed)
+          .slice(0, 5)
+          .map(space => ({
+            name: `Space ${space.spaceId}`,
+            y: space.energyConsumed
+          }));
 
         setPieChartOptions({
           chart: { type: 'pie', height: 300, width: 500 },
@@ -98,13 +85,246 @@ const EnergyChart = () => {
             }
           }
         });
+
       } catch (error) {
         console.error("Error loading charts:", error);
       }
     };
 
     fetchData();
-  }, [startDate, endDate]);
+  }, []);
+
+  return (
+    <div className="container py-4">
+      <div className="mb-5">
+        {lineChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
+        ) : (
+          <p>Loading line chart...</p>
+        )}
+      </div>
+
+      <div className="mb-5">
+        {pieChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
+        ) : (
+          <p>Loading pie chart...</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default EnergyChart;
+
+
+//app.js 
+
+import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+import SideBar from './components/SideBar';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+
+function App() {
+  return (
+    <Router>
+      <div className="d-flex">
+        <SideBar />
+        <div className="flex-grow-1 p-4">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/logout" element={<Logout />} />
+          </Routes>
+        </div>
+      </div>
+    </Router>
+  );
+}
+
+export default App;
+
+//api.js (folder->services)
+
+import axios from 'axios';
+
+const BASE_URL = 'http://localhost:5130/api';
+
+export const getEnergySummary = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error:", error);
+    throw error;
+  }
+};
+
+export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error (space-wise-energy):", error);
+    throw error;
+  }
+};
+
+
+//SideBar.jsx (folder->components)
+
+import React from 'react';
+import { Link } from 'react-router-dom';
+import '../App.css';
+
+const SideBar = () => {
+  return (
+    <div className="SideBar bg-light p-3" style={{ width: '200px', height: '100vh' }}>
+      <h5 className="mb-4">Menu</h5>
+      <ul className="nav flex-column">
+        <li className="nav-item">
+          <Link to="/profile" className="nav-link">Profile</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/" className="nav-link">Dashboard</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/settings" className="nav-link">Settings</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/logout" className="nav-link">Logout</Link>
+        </li>
+      </ul>
+    </div>
+  );
+};
+
+export default SideBar;
+
+
+//Dashboard.jsx (folder->pages)
+
+import React, { useEffect, useState } from 'react';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import { getEnergySummary, getSpaceWiseEnergy } from '../services/api';
+
+const Dashboard = () => {
+  const [lineChartOptions, setLineChartOptions] = useState(null);
+  const [pieChartOptions, setPieChartOptions] = useState(null);
+
+  const startTime = '2023-06-01T00:00:00';
+  const endTime = '2025-05-31T23:00:00';
+  const spaceIds = [1, 2, 3, 4, 6];
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const lineData = await getEnergySummary(spaceIds, startTime, endTime);
+
+        const categories = lineData.hourlyAggregated.map(item => {
+          const date = new Date(item.timestamp);
+          return date.toLocaleString(undefined, {
+            hour12: false, year: '2-digit', month: '2-digit',
+            day: '2-digit', hour: '2-digit', minute: '2-digit'
+          });
+        });
+
+        const values = lineData.hourlyAggregated.map(item => item.energyConsumed);
+
+        setLineChartOptions({
+          chart: { height: 400, width: 1200 },
+          title: { text: 'Energy Consumption Over Time' },
+          xAxis: {
+            categories,
+            labels: { rotation: 45, style: { fontSize: '10px' } }
+          },
+          yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+          series: [{ name: 'Date', data: values }],
+          tooltip: {
+            formatter: function () {
+              return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+            }
+          }
+        });
+
+        const pieData = await getSpaceWiseEnergy(spaceIds, startTime, endTime);
+        const pieSeries = pieData.totalBySpace
+          .sort((a, b) => b.energyConsumed - a.energyConsumed)
+          .slice(0, 5)
+          .map(space => ({
+            name: `Space ${space.spaceId}`,
+            y: space.energyConsumed
+          }));
+
+        setPieChartOptions({
+          chart: { type: 'pie', height: 300, width: 500 },
+          title: { text: 'Top 5 Spaces by Energy Consumption' },
+          series: [{ name: 'Energy Consumed (kWh)', data: pieSeries }],
+          tooltip: { pointFormat: '{series.name}: <b>{point.y:.2f} kWh</b>' },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              dataLabels: {
+                enabled: true,
+                format: '<b>{point.name}</b>: {point.percentage:.1f} %'
+              }
+            }
+          }
+        });
+
+      } catch (error) {
+        console.error("Error loading charts:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  return (
+    <div>
+      <h2>Dashboard</h2>
+      <div className="mb-4">
+        {lineChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
+        ) : <p>Loading line chart...</p>}
+      </div>
+      <div>
+        {pieChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
+        ) : <p>Loading pie chart...</p>}
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
+
+//Settings.jsx (folder->pages)
+
+import React, { useState } from 'react';
+
+const Settings = () => {
+  const [formData, setFormData] = useState({
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: ''
+  });
+
+  const [submitStatus, setSubmitStatus] = useState('');
 
   const handleChange = (e) => {
     setFormData(prev => ({
@@ -132,176 +352,196 @@ const EnergyChart = () => {
   };
 
   return (
-    <div className="container py-4">
-
-      {/* Date Pickers */}
-      <div className="mb-4 d-flex gap-3 align-items-center">
-        <div>
-          <label className="form-label">Start Date:</label>
-          <DatePicker
-            selected={startDate}
-            onChange={(date) => setStartDate(date)}
-            selectsStart
-            startDate={startDate}
-            endDate={endDate}
-            dateFormat="yyyy-MM-dd HH:mm"
-            showTimeSelect
+    <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
+      <h4 className="mb-3">Add New Site</h4>
+      <form onSubmit={handleSubmit}>
+        <div className="mb-3">
+          <label className="form-label">Site Name</label>
+          <input
+            type="text"
+            className="form-control"
+            name="siteName"
+            value={formData.siteName}
+            onChange={handleChange}
+            required
           />
         </div>
-        <div>
-          <label className="form-label">End Date:</label>
-          <DatePicker
-            selected={endDate}
-            onChange={(date) => setEndDate(date)}
-            selectsEnd
-            startDate={startDate}
-            endDate={endDate}
-            minDate={startDate}
-            dateFormat="yyyy-MM-dd HH:mm"
-            showTimeSelect
+        <div className="mb-3">
+          <label className="form-label">Address</label>
+          <input
+            type="text"
+            className="form-control"
+            name="address"
+            value={formData.address}
+            onChange={handleChange}
           />
         </div>
-      </div>
-
-      {/* Line Chart */}
-      <div style={{ width: '1300px', marginBottom: '40px' }}>
-        {lineChartOptions ? (
-          <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
-        ) : (
-          <p>Loading line chart...</p>
-        )}
-      </div>
-
-      {/* Pie Chart */}
-      <div style={{ width: '520px', alignLeft: '0' }}>
-        {pieChartOptions ? (
-          <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
-        ) : (
-          <p>Loading pie chart...</p>
-        )}
-      </div>
-
-      {/* Add New Site Form */}
-      <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
-        <h4 className="mb-3">Add New Site</h4>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-3">
-            <label className="form-label">Site Name</label>
-            <input
-              type="text"
-              className="form-control"
-              name="siteName"
-              value={formData.siteName}
-              onChange={handleChange}
-              required
-            />
-          </div>
-
-          <div className="mb-3">
-            <label className="form-label">Address</label>
-            <input
-              type="text"
-              className="form-control"
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="mb-3">
-            <label className="form-label">Contact Person</label>
-            <input
-              type="text"
-              className="form-control"
-              name="contactPerson"
-              value={formData.contactPerson}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="mb-3">
-            <label className="form-label">Contact Email</label>
-            <input
-              type="email"
-              className="form-control"
-              name="contactEmail"
-              value={formData.contactEmail}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="mb-3">
-            <label className="form-label">Contact Phone</label>
-            <input
-              type="text"
-              className="form-control"
-              name="contactPhone"
-              value={formData.contactPhone}
-              onChange={handleChange}
-            />
-          </div>
-          <button type="submit" className="btn btn-primary">Submit</button>
-          {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
-        </form>
-      </div>
+        <div className="mb-3">
+          <label className="form-label">Contact Person</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPerson"
+            value={formData.contactPerson}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="mb-3">
+          <label className="form-label">Contact Email</label>
+          <input
+            type="email"
+            className="form-control"
+            name="contactEmail"
+            value={formData.contactEmail}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="mb-3">
+          <label className="form-label">Contact Phone</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPhone"
+            value={formData.contactPhone}
+            onChange={handleChange}
+          />
+        </div>
+        <button type="submit" className="btn btn-primary">Submit</button>
+        {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
+      </form>
     </div>
   );
 };
 
-export default EnergyChart;
+export default Settings;
 
 
-//app.js
+//Profile.jsx (folder->pages)
 
 import React from 'react';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import './App.css';
-import EnergyChart from './components/EnergyChart'; 
-function App() {
+
+const Profile = () => {
+  return <h2>Profile Page</h2>;
+};
+
+export default Profile;
+
+
+//Logout.jsx (folder->pages)
+
+import React from 'react';
+
+const Logout = () => {
+  return <h2>You have been logged out.</h2>;
+};
+
+export default Logout;
+
+
+//SiteForm.jsx (folder->components)
+
+import React, { useState } from 'react';
+
+const SiteForm = () => {
+  const [formData, setFormData] = useState({
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: ''
+  });
+
+  const [submitStatus, setSubmitStatus] = useState('');
+
+  const handleChange = (e) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      console.log("Submitting site:", formData);
+      setSubmitStatus('Submitted successfully!');
+      setFormData({
+        siteName: '',
+        address: '',
+        contactPerson: '',
+        contactEmail: '',
+        contactPhone: ''
+      });
+    } catch (err) {
+      console.error(err);
+      setSubmitStatus('Submission failed.');
+    }
+  };
+
   return (
-    <div className="App">
-      <h1>Energy Consumption Dashboard</h1>
-      <EnergyChart /> 
+    <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
+      <form onSubmit={handleSubmit}>
+        <div className="mb-3">
+          <label className="form-label">Site Name</label>
+          <input
+            type="text"
+            className="form-control"
+            name="siteName"
+            value={formData.siteName}
+            onChange={handleChange}
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Address</label>
+          <input
+            type="text"
+            className="form-control"
+            name="address"
+            value={formData.address}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Person</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPerson"
+            value={formData.contactPerson}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Email</label>
+          <input
+            type="email"
+            className="form-control"
+            name="contactEmail"
+            value={formData.contactEmail}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Phone</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPhone"
+            value={formData.contactPhone}
+            onChange={handleChange}
+          />
+        </div>
+
+        <button type="submit" className="btn btn-primary">Submit</button>
+        {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
+      </form>
     </div>
   );
-}
-
-export default App;
-
-
-//api.js
-
-import axios from 'axios';
-
-const BASE_URL = 'http://localhost:5130/api'; 
-export const getEnergySummary = async (spaceIds, startTime, endTime) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
-      params: {
-        spaceIds,
-        startTime,
-        endTime,
-
-      },
-    });
-
-    console.log(" API Response from getEnergySummary:", response.data); 
-    return response.data;
-  } catch (error) {
-    console.error(" API Error:", error);
-    throw error;
-  }
 };
 
-export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
-      params: { spaceIds, startTime, endTime },
-    });
-    console.log("API Response from getSpaceWiseEnergy:", response.data);
-    return response.data;
-  } catch (error) {
-    console.error("API Error (space-wise-energy):", error);
-    throw error;
-  }
-};
+export default SiteForm;
