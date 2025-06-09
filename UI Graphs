@@ -69,10 +69,13 @@ const EnergyChart = () => {
         });
 
         const pieData = await getSpaceWiseEnergy([1, 2, 3, 4, 6], startTime, endTime);
-        const pieSeries = pieData.totalBySpace.map(space => ({
+|        const pieSeries = pieData.totalBySpace
+        .sort((a, b) => b.energyConsumed - a.energyConsumed) 
+        .slice(0, 5) 
+        .map(space => ({
           name: `Space ${space.spaceId}`,
           y: space.energyConsumed
-        }));
+ |       }));
 
         setPieChartOptions({
           chart: { type: 'pie', height: 300, width: 500 },
