@@ -119,6 +119,46 @@ const EnergyChart = () => {
 export default EnergyChart;
 
 
+//api.js
+
+import axios from 'axios';
+
+const BASE_URL = 'http://localhost:5130/api';
+
+export const getEnergySummary = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error:", error);
+    throw error;
+  }
+};
+
+export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error (space-wise-energy):", error);
+    throw error;
+  }
+};
+
+export const addSite = async (siteData) => {
+  try {
+    const response = await axios.post(`${BASE_URL}/Site/add-site`, siteData);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (add-site):", error);
+    throw error;
+  }
+};
+
 //app.js 
 
 import React from 'react';
