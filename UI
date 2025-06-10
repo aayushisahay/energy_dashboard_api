@@ -134,15 +134,21 @@ import Logout from './pages/Logout';
 function App() {
   return (
     <Router>
-      <div className="d-flex">
-        <SideBar />
-        <div className="flex-grow-1 p-4">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/logout" element={<Logout />} />
-          </Routes>
+      <div>
+        <header className="app-header">
+          <h1 className="app-title">Vatika Business Park</h1>
+        </header>
+
+        <div className="d-flex mt-5">
+          <SideBar />
+          <div className="flex-grow-1 p-4">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/logout" element={<Logout />} />
+            </Routes>
+          </div>
         </div>
       </div>
     </Router>
@@ -151,57 +157,18 @@ function App() {
 
 export default App;
 
-//api.js (folder->services)
-
-import axios from 'axios';
-
-const BASE_URL = 'http://localhost:5130/api';
-
-export const getEnergySummary = async (spaceIds, startTime, endTime) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
-      params: { spaceIds, startTime, endTime }
-    });
-    return response.data;
-  } catch (error) {
-    console.error("API Error:", error);
-    throw error;
-  }
-};
-
-export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
-      params: { spaceIds, startTime, endTime }
-    });
-    return response.data;
-  } catch (error) {
-    console.error("API Error (space-wise-energy):", error);
-    throw error;
-  }
-};
-
-export const addSite = async (siteData) => {
-  try {
-    const response = await axios.post(`${BASE_URL}/Site/add-site`, siteData);
-    return response.data;
-  } catch (error) {
-    console.error("API Error (add-site):", error);
-    throw error;
-  }
-};
-
 
 //SideBar.jsx (folder->components)
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import '../App.css';
+import '../App.css'; 
 
 const SideBar = () => {
   return (
-    <div className="SideBar bg-light p-3" style={{ width: '200px', height: '100vh' }}>
-      <h5 className="mb-4">Menu</h5>
+    <div className="sidebar p-3">
+      <h4 className="mb-4">Menu</h4>
+      <hr></hr>
       <ul className="nav flex-column">
         <li className="nav-item">
           <Link to="/profile" className="nav-link">Profile</Link>
@@ -472,7 +439,6 @@ const Logout = () => {
 };
 
 export default Logout;
-
 
 //SiteForm.jsx (folder->components)
 
