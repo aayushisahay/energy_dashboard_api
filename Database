@@ -234,3 +234,15 @@ SELECT TOP (1000) [SiteID]
   FROM [EnergyDashboard].[dbo].[Sites]
 
 
+ CREATE TABLE Users (
+    UserId INT PRIMARY KEY IDENTITY(1,1),
+    Username NVARCHAR(100) NOT NULL UNIQUE,
+    Password NVARCHAR(100) NOT NULL
+);
+
+INSERT INTO Users (Username, Password)
+VALUES ('Admin', 'admin@123');
+
+select * from Users
+
+
