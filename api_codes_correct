@@ -1,4 +1,9 @@
+//deletet the another edcontext.cs we created              both are merged
+
+
+
 //program.cs
+
 
 using EnergyDashboardAPI1.Models;
 using Microsoft.EntityFrameworkCore;
@@ -22,13 +27,12 @@ namespace EnergyDashboardAPI1
                 });
             });
 
-builder.Services.AddDbContext<EnergyDashboardContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+           
 
 
             builder.Services.AddControllers();
             builder.Services.AddDbContext<EnergyDbContext>(options =>
-   options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
@@ -81,84 +85,100 @@ builder.Services.AddDbContext<EnergyDashboardContext>(options =>
 using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
-using EnergyDashboardAPI1.Models;  
+using EnergyDashboardAPI1.Models;
 
-namespace EnergyDashboardAPI1.Models;
-
-public partial class EnergyDbContext : DbContext
+namespace EnergyDashboardAPI1.Models
 {
-    public EnergyDbContext()
+    public partial class EnergyDbContext : DbContext
     {
-    }
+        public EnergyDbContext() { }
 
-    public EnergyDbContext(DbContextOptions<EnergyDbContext> options)
-        : base(options)
-    {
-    }
+        public EnergyDbContext(DbContextOptions<EnergyDbContext> options)
+            : base(options) { }
 
-    public virtual DbSet<Meter> Meters { get; set; }
+        public DbSet<Site> Sites { get; set; }
+        public DbSet<User> Users { get; set; }
+        public DbSet<Meter> Meters { get; set; }
+        public DbSet<MeterReading> MeterReadings { get; set; }
+        public DbSet<Space> Spaces { get; set; }
 
-    public virtual DbSet<MeterReading> MeterReadings { get; set; }
-
-    public virtual DbSet<Space> Spaces { get; set; }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-
-        => optionsBuilder.UseSqlServer("Server=DESKTOP-9E696H1\\SQLEXPRESS01;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;");
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Meter>(entity =>
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            entity.HasKey(e => e.MeterID).HasName("PK__Meters__59223B8CC59C0DFE");
+            if (!optionsBuilder.IsConfigured)
+            {
+                optionsBuilder.UseSqlServer("Server=DESKTOP-9E696H1\\SQLEXPRESS01;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;");
+            }
+        }
 
-            entity.Property(e => e.MeterID).HasColumnName("MeterID");
-            entity.Property(e => e.MeterName)
-                .HasMaxLength(100)
-                .IsUnicode(false);
-            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
-
-            entity.HasOne(d => d.Space).WithMany(p => p.Meters)
-                .HasForeignKey(d => d.SpaceId)
-                .HasConstraintName("FK__Meters__SpaceID__3A81B327");
-        });
-
-        modelBuilder.Entity<MeterReading>(entity =>
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            entity.HasKey(e => new { e.MeterID, e.ReadingTimestamp }); // composite key
+            modelBuilder.Entity<Site>(entity =>
+            {
+                entity.HasKey(e => e.SiteId).HasName("PK__Sites__B9DCB903D8826677");
+                entity.Property(e => e.SiteId).ValueGeneratedNever().HasColumnName("SiteID");
+                entity.Property(e => e.SiteName).HasMaxLength(100);
+                entity.Property(e => e.Address).HasMaxLength(200);
+                entity.Property(e => e.ContactPerson).HasMaxLength(100);
+                entity.Property(e => e.ContactEmail).HasMaxLength(100);
+                entity.Property(e => e.ContactPhone).HasMaxLength(20);
+                entity.Property(e => e.CreatedAt).HasColumnType("datetime").HasDefaultValueSql("(getdate())");
+            });
 
-            entity.Property(e => e.MeterID).HasColumnName("MeterID");
-            entity.Property(e => e.ReadingTimestamp).HasColumnType("datetime");
-            entity.Property(e => e.Value).HasColumnName("Value");
+            
+            modelBuilder.Entity<User>(entity =>
+            {
+                entity.HasKey(e => e.UserId);
+                entity.Property(e => e.Username).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Password).IsRequired().HasMaxLength(100);
+            });
 
-            entity.HasOne(e => e.Meter)
-                  .WithMany(m => m.MeterReadings)
-                  .HasForeignKey(e => e.MeterID)
-                  .HasConstraintName("FK_MeterReading_Meter");
-        });
+            
+            modelBuilder.Entity<Meter>(entity =>
+            {
+                entity.HasKey(e => e.MeterID).HasName("PK__Meters__59223B8CC59C0DFE");
+                entity.Property(e => e.MeterID).HasColumnName("MeterID");
+                entity.Property(e => e.MeterName).HasMaxLength(100).IsUnicode(false);
+                entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
 
-        modelBuilder.Entity<Space>(entity =>
-        {
-            entity.HasKey(e => e.SpaceId).HasName("PK__Spaces__83E25E0E28BAD6A3");
+                entity.HasOne(d => d.Space)
+                      .WithMany(p => p.Meters)
+                      .HasForeignKey(d => d.SpaceId)
+                      .HasConstraintName("FK__Meters__SpaceID__3A81B327");
+            });
 
-            entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
-            entity.Property(e => e.ParentSpaceId).HasColumnName("ParentSpaceID");
-            entity.Property(e => e.SpaceName)
-                .HasMaxLength(100)
-                .IsUnicode(false);
-            entity.Property(e => e.SpaceType)
-                .HasMaxLength(50)
-                .IsUnicode(false);
+            
+            modelBuilder.Entity<MeterReading>(entity =>
+            {
+                entity.HasKey(e => new { e.MeterID, e.ReadingTimestamp });
+                entity.Property(e => e.ReadingTimestamp).HasColumnType("datetime");
+                entity.Property(e => e.Value).HasColumnName("Value");
 
-            entity.HasOne(d => d.ParentSpace).WithMany(p => p.InverseParentSpace)
-                .HasForeignKey(d => d.ParentSpaceId)
-                .HasConstraintName("FK__Spaces__ParentSp__37A5467C");
-        });
+                entity.HasOne(e => e.Meter)
+                      .WithMany(m => m.MeterReadings)
+                      .HasForeignKey(e => e.MeterID)
+                      .HasConstraintName("FK_MeterReading_Meter");
+            });
 
-        OnModelCreatingPartial(modelBuilder);
+            
+            modelBuilder.Entity<Space>(entity =>
+            {
+                entity.HasKey(e => e.SpaceId).HasName("PK__Spaces__83E25E0E28BAD6A3");
+                entity.Property(e => e.SpaceId).HasColumnName("SpaceID");
+                entity.Property(e => e.ParentSpaceId).HasColumnName("ParentSpaceID");
+                entity.Property(e => e.SpaceName).HasMaxLength(100).IsUnicode(false);
+                entity.Property(e => e.SpaceType).HasMaxLength(50).IsUnicode(false);
+
+                entity.HasOne(d => d.ParentSpace)
+                      .WithMany(p => p.InverseParentSpace)
+                      .HasForeignKey(d => d.ParentSpaceId)
+                      .HasConstraintName("FK__Spaces__ParentSp__37A5467C");
+            });
+
+            OnModelCreatingPartial(modelBuilder);
+        }
+
+        partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
     }
-
-    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }
 
 
@@ -748,7 +768,7 @@ namespace EnergyDashboardAPI1.DTOs
 
 
 
-
+//sitescontroller.cs
 using EnergyDashboardAPI1.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
@@ -760,9 +780,9 @@ namespace EnergyDashboardAPI1.Controllers
     [ApiController]
     public class SitesController : ControllerBase
     {
-        private readonly EnergyDashboardContext _context;
+        private readonly EnergyDbContext _context;
 
-        public SitesController(EnergyDashboardContext context)
+        public SitesController(EnergyDbContext context)
         {
             _context = context;
         }
@@ -817,6 +837,7 @@ namespace EnergyDashboardAPI1.Controllers
 }
 
 
+
 //errorhandlingmiddleware.cs
 using System.Text.Json;
 
@@ -866,4 +887,62 @@ public class ApiError
     public int StatusCode { get; set; }
     public string Message { get; set; }
     public string? Details { get; set; } 
+}
+
+
+
+
+
+//user.cs
+public class User
+{
+    public int UserId { get; set; }
+    public string Username { get; set; }
+    public string Password { get; set; }
+}
+
+//loginrequest.cs in dto folder
+namespace EnergyDashboardAPI1.DTOs
+{
+    public class LoginRequest
+    {
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+}
+
+
+//authcontroller
+using EnergyDashboardAPI1.DTOs;
+using EnergyDashboardAPI1.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+[Route("api/[controller]")]
+[ApiController]
+public class AuthController : ControllerBase
+{
+    private readonly EnergyDbContext _context;
+
+    public AuthController(EnergyDbContext context)
+    {
+        _context = context;
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    {
+        if (string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
+            return BadRequest("Username and password are required.");
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+
+        if (user == null)
+            return Unauthorized("Username not found.");
+
+        if (user.Password != request.Password)
+            return Unauthorized("Incorrect password.");
+
+        return Ok(new { message = "Login successful", user.Username });
+    }
 }
