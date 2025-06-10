@@ -169,6 +169,24 @@ export const getSite = async () => {
   }
 };
 
+// GET /api/Sites/Single
+export const getSingleSite = async () => {
+  const response = await axios.get(`${BASE_URL}/Sites/Single`);
+  return response.data;
+};
+
+// POST /api/Sites
+export const addSite = async (siteData) => {
+  const response = await axios.post(`${BASE_URL}/Sites`, siteData);
+  return response.data;
+};
+
+// PUT /api/Sites/{id}
+export const updateSite = async (id, siteData) => {
+  const response = await axios.put(`${BASE_URL}/Sites/${id}`, siteData);
+  return response.data;
+};
+
 //app.js 
 
 import React from 'react';
@@ -504,10 +522,12 @@ export default Logout;
 
 //SiteForm.jsx (folder->components)
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { getSingleSite, addSite, updateSite } from '../services/api';
 
 const SiteForm = () => {
-  const [formData, setFormData] = useState({
+  const [siteData, setSiteData] = useState({
+    siteID: '',
     siteName: '',
     address: '',
     contactPerson: '',
@@ -515,95 +535,144 @@ const SiteForm = () => {
     contactPhone: ''
   });
 
-  const [submitStatus, setSubmitStatus] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    const fetchSite = async () => {
+      try {
+        const data = await getSingleSite();
+        setSiteData({
+          siteID: data.siteID,
+          siteName: data.siteName,
+          address: data.address,
+          contactPerson: data.contactPerson,
+          contactEmail: data.contactEmail,
+          contactPhone: data.contactPhone
+        });
+      } catch (error) {
+        console.error("Error fetching site:", error);
+      }
+    };
+
+    fetchSite();
+  }, []);
 
   const handleChange = (e) => {
-    setFormData(prev => ({
+    const { name, value } = e.target;
+    setSiteData((prev) => ({
       ...prev,
-      [e.target.name]: e.target.value
+      [name]: value
     }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+  };
+
+  const handleSave = async () => {
     try {
-      console.log("Submitting site:", formData);
-      setSubmitStatus('Submitted successfully!');
-      setFormData({
-        siteName: '',
-        address: '',
-        contactPerson: '',
-        contactEmail: '',
-        contactPhone: ''
-      });
-    } catch (err) {
-      console.error(err);
-      setSubmitStatus('Submission failed.');
+      if (siteData.siteID) {
+        await updateSite(siteData.siteID, siteData);
+      } else {
+        const newSite = await addSite(siteData);
+        setSiteData((prev) => ({ ...prev, siteID: newSite.siteID }));
+      }
+      setIsEditing(false);
+      alert('Site saved successfully');
+    } catch (error) {
+      console.error('Error saving site:', error);
+      alert('Error saving site');
     }
   };
 
   return (
-    <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
-      <form onSubmit={handleSubmit}>
-        <div className="mb-3">
-          <label className="form-label">Site Name</label>
-          <input
-            type="text"
-            className="form-control"
-            name="siteName"
-            value={formData.siteName}
-            onChange={handleChange}
-            required
-          />
-        </div>
+    <div className="card p-4">
+      <h4 className="mb-4">Add New Site</h4>
 
-        <div className="mb-3">
-          <label className="form-label">Address</label>
-          <input
-            type="text"
-            className="form-control"
-            name="address"
-            value={formData.address}
-            onChange={handleChange}
-          />
-        </div>
+      <div className="mb-3">
+        <label className="form-label">Site ID</label>
+        <input
+          type="text"
+          className="form-control"
+          name="siteID"
+          value={siteData.siteID}
+          onChange={handleChange}
+          disabled
+        />
+      </div>
 
-        <div className="mb-3">
-          <label className="form-label">Contact Person</label>
-          <input
-            type="text"
-            className="form-control"
-            name="contactPerson"
-            value={formData.contactPerson}
-            onChange={handleChange}
-          />
-        </div>
+      <div className="mb-3">
+        <label className="form-label">Site Name</label>
+        <input
+          type="text"
+          className="form-control"
+          name="siteName"
+          value={siteData.siteName}
+          onChange={handleChange}
+          disabled={!isEditing}
+        />
+      </div>
 
-        <div className="mb-3">
-          <label className="form-label">Contact Email</label>
-          <input
-            type="email"
-            className="form-control"
-            name="contactEmail"
-            value={formData.contactEmail}
-            onChange={handleChange}
-          />
-        </div>
+      <div className="mb-3">
+        <label className="form-label">Address</label>
+        <input
+          type="text"
+          className="form-control"
+          name="address"
+          value={siteData.address}
+          onChange={handleChange}
+          disabled={!isEditing}
+        />
+      </div>
 
-        <div className="mb-3">
-          <label className="form-label">Contact Phone</label>
-          <input
-            type="text"
-            className="form-control"
-            name="contactPhone"
-            value={formData.contactPhone}
-            onChange={handleChange}
-          />
-        </div>
+      <div className="mb-3">
+        <label className="form-label">Contact Person</label>
+        <input
+          type="text"
+          className="form-control"
+          name="contactPerson"
+          value={siteData.contactPerson}
+          onChange={handleChange}
+          disabled={!isEditing}
+        />
+      </div>
 
-        <button type="submit" className="btn btn-primary">Submit</button>
-        {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
-      </form>
+      <div className="mb-3">
+        <label className="form-label">Contact Email</label>
+        <input
+          type="email"
+          className="form-control"
+          name="contactEmail"
+          value={siteData.contactEmail}
+          onChange={handleChange}
+          disabled={!isEditing}
+        />
+      </div>
+
+      <div className="mb-3">
+        <label className="form-label">Contact Phone</label>
+        <input
+          type="text"
+          className="form-control"
+          name="contactPhone"
+          value={siteData.contactPhone}
+          onChange={handleChange}
+          disabled={!isEditing}
+        />
+      </div>
+
+      {!isEditing ? (
+        <button className="btn btn-primary" onClick={handleEdit}>Edit</button>
+      ) : (
+        <>
+          <button className="btn btn-success me-2" onClick={handleSave}>Save</button>
+          <button className="btn btn-secondary" onClick={handleCancel}>Cancel</button>
+        </>
+      )}
     </div>
   );
 };
