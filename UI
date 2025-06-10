@@ -123,69 +123,67 @@ export default EnergyChart;
 
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:5130/api';
+const BASE_URL = 'http://localhost:5076/api';
 
+// GET summary of energy readings for given space(s) and time range
 export const getEnergySummary = async (spaceIds, startTime, endTime) => {
   try {
     const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
-      params: { spaceIds, startTime, endTime }
+      params: { spaceIds, startTime, endTime },
     });
     return response.data;
   } catch (error) {
-    console.error("API Error:", error);
+    console.error("API Error (getEnergySummary):", error.response?.data || error.message);
     throw error;
   }
 };
 
+// GET energy data space-wise
 export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
   try {
     const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
-      params: { spaceIds, startTime, endTime }
+      params: { spaceIds, startTime, endTime },
     });
     return response.data;
   } catch (error) {
-    console.error("API Error (space-wise-energy):", error);
+    console.error("API Error (getSpaceWiseEnergy):", error.response?.data || error.message);
     throw error;
   }
 };
 
+// POST a new site
 export const addSite = async (siteData) => {
   try {
-    const response = await axios.post(`${BASE_URL}/Site/add-site`, siteData);
+    const response = await axios.post(`${BASE_URL}/Sites`, siteData);
     return response.data;
   } catch (error) {
-    console.error("API Error (add-site):", error);
+    console.error("API Error (addSite):", error.response?.data || error.message);
     throw error;
   }
 };
 
-export const getSite = async () => {
-  try {
-    const response = await axios.get(`${BASE_URL}/Site/get-site`);
-    return response.data;
-  } catch (error) {
-    console.error("API Error (get-site):", error);
-    throw error;
-  }
-};
-
-// GET /api/Sites/Single
+// GET details of a single site
 export const getSingleSite = async () => {
-  const response = await axios.get(`${BASE_URL}/Sites/Single`);
-  return response.data;
+  try {
+    const response = await axios.get(`${BASE_URL}/Sites/Single`);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (getSingleSite):", error.response?.data || error.message);
+    throw error;
+  }
 };
 
-// POST /api/Sites
-export const addSite = async (siteData) => {
-  const response = await axios.post(`${BASE_URL}/Sites`, siteData);
-  return response.data;
-};
-
-// PUT /api/Sites/{id}
+// PUT (update) site by ID
 export const updateSite = async (id, siteData) => {
-  const response = await axios.put(`${BASE_URL}/Sites/${id}`, siteData);
-  return response.data;
+  try {
+    const response = await axios.put(`${BASE_URL}/Sites/${id}`, siteData);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (updateSite):", error.response?.data || error.message);
+    throw error;
+  }
 };
+
 
 //app.js 
 
@@ -361,12 +359,12 @@ export default Dashboard;
 
 import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { getSite, addSite } from '../services/api';
+import { getSingleSite, addSite } from '../services/api'; // Ensure both are correctly exported from api.js
 
 const Settings = () => {
   const [formData, setFormData] = useState({
     siteName: '',
-    location: '',
+    address: '',
     contactPerson: '',
     contactEmail: '',
     contactPhone: '',
@@ -377,7 +375,7 @@ const Settings = () => {
   useEffect(() => {
     const fetchSite = async () => {
       try {
-        const site = await getSite();
+        const site = await getSingleSite(); // ✅ Use the correct function name
         setFormData(site);
       } catch (error) {
         console.error('Failed to fetch site data', error);
@@ -396,85 +394,44 @@ const Settings = () => {
 
   const handleCancel = () => {
     setIsEditing(false);
-    // Optionally reload original data
-    // fetchSite(); // Uncomment this if you want to reload original values
   };
 
   const handleSave = async () => {
-    try {
-      await addSite(formData);
-      alert('Site saved successfully!');
-      setIsEditing(false);
-    } catch (error) {
-      alert('Error saving site');
-    }
-  };
+  try {
+    await addSite(formData);
+    alert('Site saved successfully!');
+    setIsEditing(false);
+  } catch (error) {
+    console.error('Error saving site:', error.response?.data || error.message);
+    alert('Error saving site');
+  }
+};
+
 
   return (
     <div className="container mt-4">
       <div className="card p-4">
         <h4>Add New Site</h4>
         <form>
-          <div className="mb-3">
-            <label htmlFor="siteName" className="form-label">Site Name</label>
-            <input
-              type="text"
-              className="form-control"
-              id="siteName"
-              name="siteName"
-              value={formData.siteName}
-              onChange={handleChange}
-              disabled={!isEditing}
-            />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="location" className="form-label">Address</label>
-            <input
-              type="text"
-              className="form-control"
-              id="location"
-              name="location"
-              value={formData.location}
-              onChange={handleChange}
-              disabled={!isEditing}
-            />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="contactPerson" className="form-label">Contact Person</label>
-            <input
-              type="text"
-              className="form-control"
-              id="contactPerson"
-              name="contactPerson"
-              value={formData.contactPerson}
-              onChange={handleChange}
-              disabled={!isEditing}
-            />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="contactEmail" className="form-label">Contact Email</label>
-            <input
-              type="email"
-              className="form-control"
-              id="contactEmail"
-              name="contactEmail"
-              value={formData.contactEmail}
-              onChange={handleChange}
-              disabled={!isEditing}
-            />
-          </div>
-          <div className="mb-3">
-            <label htmlFor="contactPhone" className="form-label">Contact Phone</label>
-            <input
-              type="tel"
-              className="form-control"
-              id="contactPhone"
-              name="contactPhone"
-              value={formData.contactPhone}
-              onChange={handleChange}
-              disabled={!isEditing}
-            />
-          </div>
+          {['siteName', 'address', 'contactPerson', 'contactEmail', 'contactPhone'].map((field) => (
+            <div className="mb-3" key={field}>
+              <label htmlFor={field} className="form-label">
+                {field === 'siteName' ? 'Site Name' :
+                 field === 'address' ? 'Address' :
+                 field === 'contactPerson' ? 'Contact Person' :
+                 field === 'contactEmail' ? 'Contact Email' : 'Contact Phone'}
+              </label>
+              <input
+                type={field === 'contactEmail' ? 'email' : field === 'contactPhone' ? 'tel' : 'text'}
+                className="form-control"
+                id={field}
+                name={field}
+                value={formData[field]}
+                onChange={handleChange}
+                disabled={!isEditing}
+              />
+            </div>
+          ))}
 
           {!isEditing ? (
             <button type="button" className="btn btn-primary" onClick={handleEdit}>
@@ -522,12 +479,13 @@ export default Logout;
 
 //SiteForm.jsx (folder->components)
 
-import React, { useEffect, useState } from 'react';
-import { getSingleSite, addSite, updateSite } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const SiteForm = () => {
-  const [siteData, setSiteData] = useState({
-    siteID: '',
+const BASE_URL = 'http://localhost:5076/api/Sites';
+
+const SiteForm = ({ siteId = null }) => {
+  const [formData, setFormData] = useState({
     siteName: '',
     address: '',
     contactPerson: '',
@@ -535,149 +493,81 @@ const SiteForm = () => {
     contactPhone: ''
   });
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState('');
 
+  // 🔁 Fetch existing site data if siteId is provided (for editing)
   useEffect(() => {
     const fetchSite = async () => {
       try {
-        const data = await getSingleSite();
-        setSiteData({
-          siteID: data.siteID,
-          siteName: data.siteName,
-          address: data.address,
-          contactPerson: data.contactPerson,
-          contactEmail: data.contactEmail,
-          contactPhone: data.contactPhone
-        });
+        if (siteId) {
+          const response = await axios.get(`${BASE_URL}/${siteId}`);
+          setFormData(response.data);
+        }
       } catch (error) {
-        console.error("Error fetching site:", error);
+        console.error('Error loading site:', error);
       }
     };
-
     fetchSite();
-  }, []);
+  }, [siteId]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setSiteData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      [name]: value
+      [e.target.name]: e.target.value
     }));
   };
 
-  const handleEdit = () => {
-    setIsEditing(true);
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-  };
-
-  const handleSave = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
-      if (siteData.siteID) {
-        await updateSite(siteData.siteID, siteData);
+      if (siteId) {
+        // 🔄 Update existing site
+        await axios.put(`${BASE_URL}/${siteId}`, { siteId, ...formData });
+        setSubmitStatus('Site updated successfully!');
       } else {
-        const newSite = await addSite(siteData);
-        setSiteData((prev) => ({ ...prev, siteID: newSite.siteID }));
+        // 🆕 Create new site
+        await axios.post(BASE_URL, formData);
+        setSubmitStatus('Site created successfully!');
       }
-      setIsEditing(false);
-      alert('Site saved successfully');
-    } catch (error) {
-      console.error('Error saving site:', error);
-      alert('Error saving site');
+      setFormData({
+        siteName: '',
+        address: '',
+        contactPerson: '',
+        contactEmail: '',
+        contactPhone: ''
+      });
+    } catch (err) {
+      console.error(err);
+      setSubmitStatus('Submission failed.');
     }
   };
 
   return (
-    <div className="card p-4">
-      <h4 className="mb-4">Add New Site</h4>
-
-      <div className="mb-3">
-        <label className="form-label">Site ID</label>
-        <input
-          type="text"
-          className="form-control"
-          name="siteID"
-          value={siteData.siteID}
-          onChange={handleChange}
-          disabled
-        />
-      </div>
-
-      <div className="mb-3">
-        <label className="form-label">Site Name</label>
-        <input
-          type="text"
-          className="form-control"
-          name="siteName"
-          value={siteData.siteName}
-          onChange={handleChange}
-          disabled={!isEditing}
-        />
-      </div>
-
-      <div className="mb-3">
-        <label className="form-label">Address</label>
-        <input
-          type="text"
-          className="form-control"
-          name="address"
-          value={siteData.address}
-          onChange={handleChange}
-          disabled={!isEditing}
-        />
-      </div>
-
-      <div className="mb-3">
-        <label className="form-label">Contact Person</label>
-        <input
-          type="text"
-          className="form-control"
-          name="contactPerson"
-          value={siteData.contactPerson}
-          onChange={handleChange}
-          disabled={!isEditing}
-        />
-      </div>
-
-      <div className="mb-3">
-        <label className="form-label">Contact Email</label>
-        <input
-          type="email"
-          className="form-control"
-          name="contactEmail"
-          value={siteData.contactEmail}
-          onChange={handleChange}
-          disabled={!isEditing}
-        />
-      </div>
-
-      <div className="mb-3">
-        <label className="form-label">Contact Phone</label>
-        <input
-          type="text"
-          className="form-control"
-          name="contactPhone"
-          value={siteData.contactPhone}
-          onChange={handleChange}
-          disabled={!isEditing}
-        />
-      </div>
-
-      {!isEditing ? (
-        <button className="btn btn-primary" onClick={handleEdit}>Edit</button>
-      ) : (
-        <>
-          <button className="btn btn-success me-2" onClick={handleSave}>Save</button>
-          <button className="btn btn-secondary" onClick={handleCancel}>Cancel</button>
-        </>
-      )}
+    <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
+      <h5>{siteId ? 'Edit Site' : 'Create New Site'}</h5>
+      <form onSubmit={handleSubmit}>
+        {['siteName', 'address', 'contactPerson', 'contactEmail', 'contactPhone'].map((field, i) => (
+          <div className="mb-3" key={i}>
+            <label className="form-label">{field.replace(/([A-Z])/g, ' $1')}</label>
+            <input
+              type={field === 'contactEmail' ? 'email' : 'text'}
+              className="form-control"
+              name={field}
+              value={formData[field]}
+              onChange={handleChange}
+              required={field === 'siteName'}
+            />
+          </div>
+        ))}
+        <button type="submit" className="btn btn-primary">Submit</button>
+        {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
+      </form>
     </div>
   );
 };
 
 export default SiteForm;
+
 
 //app.css
 
