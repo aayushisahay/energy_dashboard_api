@@ -159,6 +159,16 @@ export const addSite = async (siteData) => {
   }
 };
 
+export const getSite = async () => {
+  try {
+    const response = await axios.get(`${BASE_URL}/Site/get-site`);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (get-site):", error);
+    throw error;
+  }
+};
+
 //app.js 
 
 import React from 'react';
@@ -331,9 +341,9 @@ export default Dashboard;
 
 //Settings.jsx (folder->pages)
 
-import React, { useState } from 'react';
-import { addSite } from '../services/api'; // Adjust path if needed
+import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import { getSite, addSite } from '../services/api';
 
 const Settings = () => {
   const [formData, setFormData] = useState({
@@ -346,6 +356,18 @@ const Settings = () => {
 
   const [isEditing, setIsEditing] = useState(false);
 
+  useEffect(() => {
+    const fetchSite = async () => {
+      try {
+        const site = await getSite();
+        setFormData(site);
+      } catch (error) {
+        console.error('Failed to fetch site data', error);
+      }
+    };
+    fetchSite();
+  }, []);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -355,8 +377,9 @@ const Settings = () => {
   };
 
   const handleCancel = () => {
-    // Optional: Reset to original data if needed
     setIsEditing(false);
+    // Optionally reload original data
+    // fetchSite(); // Uncomment this if you want to reload original values
   };
 
   const handleSave = async () => {
@@ -435,7 +458,6 @@ const Settings = () => {
             />
           </div>
 
-          {/* Button logic */}
           {!isEditing ? (
             <button type="button" className="btn btn-primary" onClick={handleEdit}>
               Edit
