@@ -744,7 +744,125 @@ namespace EnergyDashboardAPI1.Controllers
         return Ok(result);
     }
 
-}
+        [HttpGet("aggregated-summary")]
+        public async Task<IActionResult> GetAggregatedSummary(
+        [FromQuery] List<int> spaceIds,
+        [FromQuery] DateTime startTime,
+        [FromQuery] DateTime endTime,
+        [FromQuery] string groupBy)
+        {
+            if (spaceIds == null || !spaceIds.Any())
+                return BadRequest("Space IDs are required.");
+            if (endTime <= startTime)
+                return BadRequest("End time must be after start time.");
+
+            var spaceMeterIds = await _context.Meters
+                .Where(m => spaceIds.Contains(m.SpaceId))
+                .Select(m => m.MeterID)
+                .ToListAsync();
+
+            var readings = await _context.MeterReadings
+                .Where(r => spaceMeterIds.Contains(r.MeterID) &&
+                            r.ReadingTimestamp >= startTime &&
+                            r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            var grouped = groupBy.ToLower() == "monthly"
+            ? readings
+           .GroupBy(r => new { r.ReadingTimestamp.Year, r.ReadingTimestamp.Month })
+           .Select(g => new {
+            Period = $"{g.Key.Year}-{g.Key.Month:D2}", 
+            TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
+          })
+    :       readings
+           .GroupBy(r => r.ReadingTimestamp.Date)
+           .Select(g => new {
+            Period = g.Key.ToString("yyyy-MM-dd"), 
+            TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
+        });
+
+
+            return Ok(grouped);
+        }
+
+
+        [HttpGet("energy-aggregate")]
+        public async Task<IActionResult> GetEnergyAggregate(
+       [FromQuery] List<int> spaceIds,
+       [FromQuery] DateTime startTime,
+       [FromQuery] DateTime endTime)
+        {
+            if (spaceIds == null || !spaceIds.Any())
+                return BadRequest("Space IDs are required.");
+            if (endTime <= startTime)
+                return BadRequest("End time must be after start time.");
+
+            var meterIds = await _context.Meters
+                .Where(m => spaceIds.Contains(m.SpaceId))
+                .Select(m => m.MeterID)
+                .ToListAsync();
+
+            if (!meterIds.Any())
+                return NotFound("No meters found for the given spaces.");
+
+            var readings = await _context.MeterReadings
+                .Where(r => meterIds.Contains(r.MeterID)
+                            && r.ReadingTimestamp >= startTime
+                            && r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+
+            if (!readings.Any())
+                return NotFound("No readings found for the given criteria.");
+
+            var totalEnergy = readings
+                .GroupBy(r => r.MeterID)
+                .Sum(g => g.Max(x => x.Value) - g.Min(x => x.Value));
+
+            string aggregationLevel;
+            var duration = (endTime - startTime).TotalDays;
+
+            if (duration <= 2)
+                aggregationLevel = "hourly";
+            else if (duration <= 60)
+                aggregationLevel = "daily";
+            else
+                aggregationLevel = "monthly";
+
+            var aggregatedList = aggregationLevel switch
+            {
+                "hourly" => readings
+                    .GroupBy(r => new { r.ReadingTimestamp.Date, r.ReadingTimestamp.Hour })
+                    .Select(g => new {
+                        Period = $"{g.Key.Date:yyyy-MM-dd} {g.Key.Hour:D2}:00",
+                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
+                    }),
+
+                "monthly" => readings
+                    .GroupBy(r => new { r.ReadingTimestamp.Year, r.ReadingTimestamp.Month })
+                    .Select(g => new {
+                        Period = $"{g.Key.Year}-{g.Key.Month:D2}",
+                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
+                    }),
+
+                _ => readings
+                    .GroupBy(r => r.ReadingTimestamp.Date)
+                    .Select(g => new {
+                        Period = g.Key.ToString("yyyy-MM-dd"),
+                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
+                    })
+            };
+
+            return Ok(new
+            {
+                totalEnergy,
+                aggregationLevel,
+                aggregatedList
+            });
+        }
+
+    }
 }
 
 
