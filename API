@@ -2,12 +2,19 @@
 
 
 
+---------> Changes in program.cs and authcontroller.cs <-------------------------------
+---------> appsettings.json, launchSettings.json at the end <-----------------------
+
 //program.cs
 
 
 using EnergyDashboardAPI1.Models;
 using Microsoft.EntityFrameworkCore;
-
+----------------------------->
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+<-------------------------------------
 namespace EnergyDashboardAPI1
 {
     public class Program
@@ -28,8 +35,6 @@ namespace EnergyDashboardAPI1
             });
 
            
-
-
             builder.Services.AddControllers();
             builder.Services.AddDbContext<EnergyDbContext>(options =>
             options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -44,41 +49,58 @@ namespace EnergyDashboardAPI1
              });
             builder.Services.AddOpenApi();
 
+------------------->
+            // 5. Read JWT settings from appsettings.json
+            var jwtSettings = builder.Configuration.GetSection("Jwt");
+            var key = Encoding.UTF8.GetBytes("mysupersecretkeythatisatleast32chars!");
+
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtSettings["Issuer"],
+                    ValidAudience = jwtSettings["Audience"],
+                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                };
+            });
 
             var app = builder.Build();
+
+            // 6. Use Swagger UI and enable CORS in dev
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
+                app.UseDeveloperExceptionPage();
                 app.UseSwaggerUI();
-                app.UseCors("AllowAll");
-
-                app.UseHttpsRedirection();
-                app.UseAuthorization();
-                app.MapControllers();
-                app.Run();
-            }
-            ;
-
-            if (app.Environment.IsDevelopment())
-            {
                 app.MapOpenApi();
             }
 
+            // 7. Use Middlewares
+            app.UseCors("AllowAll");
             app.UseMiddleware<ErrorHandlingMiddleware>();
-
             app.UseHttpsRedirection();
 
+            // 8. Enable authentication and authorization
+            app.UseAuthentication();
             app.UseAuthorization();
 
-
+            // 9. Map API routes
             app.MapControllers();
 
             app.Run();
-
         }
     }
 }
-
+<-----------------------------------------------
 
 //energydbcontext.cs
 
@@ -1030,37 +1052,122 @@ namespace EnergyDashboardAPI1.DTOs
 }
 
 
-//authcontroller
+//authcontroller.cs
 using EnergyDashboardAPI1.DTOs;
 using EnergyDashboardAPI1.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+----------------------------------->
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+<----------------------------------------------
 [Route("api/[controller]")]
 [ApiController]
 public class AuthController : ControllerBase
 {
     private readonly EnergyDbContext _context;
+----------------------------------------------->
+    private readonly IConfiguration _config;
 
-    public AuthController(EnergyDbContext context)
+    public AuthController(EnergyContext context, IConfiguration config)
     {
-        _context = context;
+    _context = context;
+    _config = config;
     }
-
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest? request)
     {
-        if (string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
-            return BadRequest("Username and password are required.");
+        try
+        {
+            if (request == null || string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
+                return BadRequest("Username and password are required.");
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Username.ToLower() == request.Username.ToLower());
 
-        if (user == null)
-            return Unauthorized("Username not found.");
+            if (user == null || user.Password != request.Password)
+                return Unauthorized("Invalid username or password.");
 
-        if (user.Password != request.Password)
-            return Unauthorized("Incorrect password.");
-
-        return Ok(new { message = "Login successful", user.Username });
+            var token = GenerateJwtToken(user.Username);
+            return Ok(new { token, message = "Login successful", user.Username });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
     }
+
+
+    private string GenerateJwtToken(string username)
+    {
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("mysupersecretkeythatisatleast32chars!")); // Match the one in Program.cs
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+        new Claim(ClaimTypes.Name, username)
+    };
+
+        var token = new JwtSecurityToken(
+            issuer: "yourdomain.com",
+            audience: "yourdomain.com",
+            claims: claims,
+            expires: DateTime.Now.AddHours(1),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
 }
+<-------------------------------------------------------------------------
+
+//appsettings.json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=Aditi\\SQLEXPRESS;Database=EnergyDashboard;Integrated Security=True;TrustServerCertificate=True;"
+  },
+  "Jwt": {
+    "Issuer": "yourdomain.com",
+    "Audience": "yourdomain.com",
+    "Key": "mysupersecretkeythatisatleast32chars!",
+    "ExpiresInMinutes": 60
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
+
+
+
+//under Properties, launchSettings.json
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5059",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "https://localhost:7245;http://localhost:5059",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
+
