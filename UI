@@ -1543,3 +1543,349 @@ const SideBar = () => {
 };
 
 export default SideBar;
+
+Dashboard.jsx:
+import React, { useEffect, useState } from 'react';
+import LineChart from '../components/LineChart';
+import PieChart from '../components/PieChart';
+import HeatMapChart from '../components/HeatMapChart';
+import DashboardFilters from '../components/DashboardFilters';
+import LoadingSpinner from '../components/LoadingSpinner';
+import {
+  getEnergySummary,
+  getSpaceWiseEnergy,
+  getAllSpaces
+} from '../services/api';
+import {
+  startOfToday,
+  startOfMonth,
+  startOfYear
+} from 'date-fns';
+
+const buildTreeData = (spaces) => {
+  const idToNodeMap = {};
+  const tree = [];
+
+  for (const space of spaces) {
+    idToNodeMap[space.spaceId] = {
+      title: space.spaceName,
+      value: space.spaceId.toString(),
+      key: space.spaceId.toString(),
+      children: []
+    };
+  }
+
+  for (const space of spaces) {
+    const node = idToNodeMap[space.spaceId];
+    if (space.parentSpaceId && idToNodeMap[space.parentSpaceId]) {
+      idToNodeMap[space.parentSpaceId].children.push(node);
+    } else {
+      tree.push(node);
+    }
+  }
+
+  const sortTree = (nodes) => {
+    nodes.sort((a, b) => a.title.localeCompare(b.title));
+    nodes.forEach(node => node.children?.length && sortTree(node.children));
+  };
+
+  sortTree(tree);
+  return tree;
+};
+
+const Dashboard = () => {
+  const [treeData, setTreeData] = useState([]);
+  const [selectedValues, setSelectedValues] = useState([]);
+  const [timeRange, setTimeRange] = useState('thisMonth');
+  const [startDate, setStartDate] = useState(startOfMonth(new Date()));
+  const [endDate, setEndDate] = useState(new Date());
+
+  const [lineChartOptions, setLineChartOptions] = useState(null);
+  const [pieChartOptions, setPieChartOptions] = useState(null);
+  const [heatMapOptions, setHeatMapOptions] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getAllSpaces()
+      .then(spaces => setTreeData(buildTreeData(spaces)))
+      .catch(err => console.error('Error fetching spaces:', err));
+  }, []);
+
+  useEffect(() => {
+    const now = new Date();
+    let newStart, newEnd;
+
+    switch (timeRange) {
+      case 'today':
+        newStart = new Date('2025-05-31T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+      break;
+
+      case 'thisWeek':
+        newStart = new Date('2025-05-25T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'thisMonth':
+        newStart = new Date('2025-05-01T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'thisYear':
+        newStart = startOfYear(new Date('2025-01-01T00:00:00'));
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'custom':
+        return; // Don't update for custom
+      default:
+        newStart = startOfMonth(now);
+        newEnd = now;
+    }
+
+    setStartDate(newStart);
+    setEndDate(newEnd);
+  }, [timeRange]);
+
+  const fetchData = async () => {
+    if (!selectedValues.length) {
+      setLineChartOptions(null);
+      setPieChartOptions(null);
+      setHeatMapOptions(null);
+      return;
+    }
+
+    setLoading(true);
+    const s = startDate.toISOString();
+    const e = endDate.toISOString();
+
+    try {
+      const [lineRes, pieRes] = await Promise.all([
+        getEnergySummary(selectedValues, s, e),
+        getSpaceWiseEnergy(selectedValues, s, e)
+      ]);
+
+      // Line Chart
+      const categories = lineRes.hourlyAggregated.map(i =>
+        new Date(i.timestamp).toLocaleString(undefined, {
+          hour12: false, year: '2-digit', month: '2-digit',
+          day: '2-digit', hour: '2-digit', minute: '2-digit'
+        })
+      );
+      const values = lineRes.hourlyAggregated.map(i => i.energyConsumed);
+
+      setLineChartOptions({
+        chart: { type: 'line', height: 400 },
+        title: { text: 'Energy Consumption Over Time' },
+        xAxis: {
+          categories,
+          labels: { rotation: 45, style: { fontSize: '10px' } }
+        },
+        yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+        series: [{ name: 'Energy', data: values }],
+        tooltip: {
+          formatter() {
+            return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+          }
+        }
+      });
+
+      // Pie Chart
+      const pieData = pieRes.totalBySpace
+        .sort((a, b) => b.energyConsumed - a.energyConsumed)
+        .slice(0, 5)
+        .map(space => ({
+          name: space.spaceName || 'Unnamed Space',
+          y: space.energyConsumed
+        }));
+
+      setPieChartOptions({
+        chart: { type: 'pie', height: 300 },
+        title: { text: 'Top 5 Spaces by Energy Consumption' },
+        series: [{
+          type: 'pie',
+          name: 'Energy Consumed (kWh)',
+          colorByPoint: true,
+          data: pieData
+        }],
+        tooltip: { pointFormat: '<b>{point.name}</b>: {point.y:.2f} kWh' },
+        plotOptions: {
+          pie: {
+            allowPointSelect: true,
+            cursor: 'pointer',
+            showInLegend: true,
+            dataLabels: {
+              enabled: true,
+              format: '<b>{point.name}</b>: {point.percentage:.1f} %'
+            }
+          }
+        }
+      });
+
+      // Heatmap
+      const heatmapDataRaw = lineRes.hourlyAggregated.map(entry => {
+        const date = new Date(entry.timestamp);
+        const hour = date.getHours();
+        const day = date.toLocaleDateString();
+        return { day, hour, energy: entry.energyConsumed };
+      });
+
+      const days = [...new Set(heatmapDataRaw.map(d => d.day))];
+      const heatmapData = heatmapDataRaw.map(d => [
+        d.hour,              // x - hour
+        days.indexOf(d.day), // y - day index
+        d.energy             // value
+      ]);
+
+      setHeatMapOptions({
+        chart: { type: 'heatmap', height: 400 },
+        title: { text: 'Hourly Energy Consumption Heatmap' },
+        xAxis: {
+          categories: [...Array(24).keys()],
+          title: { text: 'Hour of Day' }
+        },
+        yAxis: {
+          categories: days,
+          title: { text: 'Date' },
+          reversed: true
+        },
+        colorAxis: {
+          min: 0,
+          minColor: '#FFFFFF',
+          maxColor: '#003399'
+        },
+        series: [{
+          name: 'Energy Consumed (kWh)',
+          borderWidth: 1,
+          data: heatmapData,
+          dataLabels: {
+            enabled: false
+          }
+        }],
+        tooltip: {
+          formatter: function () {
+            return `<b>${days[this.point.y]}</b><br/>Hour: <b>${this.point.x}</b><br/>Energy: <b>${this.point.value.toFixed(2)} kWh</b>`;
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Chart data fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [selectedValues, startDate, endDate]);
+
+  return (
+    <div className="container py-4">
+      <h2 className="mb-4">Dashboard</h2>
+
+      <DashboardFilters
+        treeData={treeData}
+        selectedValues={selectedValues}
+        setSelectedValues={setSelectedValues}
+        timeRange={timeRange}
+        setTimeRange={setTimeRange}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+      />m
+
+      {loading ? (
+        <LoadingSpinner />
+      ) : (
+        <div className="grid gap-4" style={{ display: 'grid', gridTemplateRows: 'auto auto', rowGap: '2rem' }}>
+          <div>
+            <LineChart options={lineChartOptions} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+            <div>
+              <PieChart options={pieChartOptions} />
+            </div>
+            <div>
+              <HeatMapChart options={heatMapOptions} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
+
+App.js:
+import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+import SideBar from './components/SideBar';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+
+const AppContent = () => {
+  const location = useLocation();
+  const isAuthenticated = localStorage.getItem('isAuthenticated');
+
+  // Hide sidebar on login and forgot-password pages
+  const hideSidebarPaths = ['/login', '/forgot-password'];
+  const showSidebar = !hideSidebarPaths.includes(location.pathname);
+
+  return (
+    <div className="d-flex">
+      {showSidebar && <SideBar />}
+      <div className="flex-grow-1 p-4">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              isAuthenticated ? <Profile /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              isAuthenticated ? <Settings /> : <Navigate to="/login" />
+            }
+          />
+          <Route path="/logout" element={<Logout />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
+  );
+}
+
+export default App;
+
