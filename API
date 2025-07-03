@@ -8,51 +8,57 @@
 //program.cs
 
 
-using EnergyDashboardAPI1.Models;
+using EnergyDashboard1.Models;
 using Microsoft.EntityFrameworkCore;
------------------------------>
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
-<-------------------------------------
-namespace EnergyDashboardAPI1
+using Serilog;
+
+namespace EnergyDashboard1
 {
     public class Program
     {
         public static void Main(string[] args)
         {
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(new ConfigurationBuilder()
+                    .AddJsonFile("appsettings.json")
+                    .AddJsonFile("appsettings.Development.json", optional: true)
+                    .Build())
+                .CreateLogger();
+
             var builder = WebApplication.CreateBuilder(args);
+
+            builder.Host.UseSerilog(); 
 
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", policy =>
                 {
-                    policy
-                        .AllowAnyOrigin()
-                        .AllowAnyHeader()
-                        .AllowAnyMethod();
+                    policy.AllowAnyOrigin()
+                          .AllowAnyHeader()
+                          .AllowAnyMethod();
                 });
             });
 
-           
             builder.Services.AddControllers();
-            builder.Services.AddDbContext<EnergyDbContext>(options =>
-            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+            builder.Services.AddDbContext<EnergyContext>(options =>
+                options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
             builder.Services.AddControllers()
-            .AddJsonOptions(options =>
-             {
-                  options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
-                 options.JsonSerializerOptions.WriteIndented = true;
-             });
+                .AddJsonOptions(options =>
+                {
+                    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+                    options.JsonSerializerOptions.WriteIndented = true;
+                });
             builder.Services.AddOpenApi();
 
-------------------->
-            // 5. Read JWT settings from appsettings.json
             var jwtSettings = builder.Configuration.GetSection("Jwt");
-            var key = Encoding.UTF8.GetBytes("mysupersecretkeythatisatleast32chars!");
+            var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
 
             builder.Services.AddAuthentication(options =>
             {
@@ -69,38 +75,43 @@ namespace EnergyDashboardAPI1
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = jwtSettings["Issuer"],
                     ValidAudience = jwtSettings["Audience"],
-                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    RoleClaimType = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = context =>
+                    {
+                        Console.WriteLine($"Token failed: {context.Exception.Message}");
+                        return Task.CompletedTask;
+                    }
                 };
             });
 
+            builder.Services.AddAuthorization();
             var app = builder.Build();
 
-            // 6. Use Swagger UI and enable CORS in dev
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
-                app.UseDeveloperExceptionPage();
+               // app.UseDeveloperExceptionPage();
                 app.UseSwaggerUI();
-                app.MapOpenApi();
+               // app.MapOpenApi();
             }
 
-            // 7. Use Middlewares
             app.UseCors("AllowAll");
             app.UseMiddleware<ErrorHandlingMiddleware>();
             app.UseHttpsRedirection();
-
-            // 8. Enable authentication and authorization
+            app.UseRouting();
             app.UseAuthentication();
             app.UseAuthorization();
-
-            // 9. Map API routes
             app.MapControllers();
 
             app.Run();
         }
     }
 }
-<-----------------------------------------------
+
 
 //energydbcontext.cs
 
@@ -270,47 +281,58 @@ namespace EnergyDashboardAPI1.Models
 //spacescontroller.cs
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using EnergyDashboardAPI1.Models;
+using EnergyDashboard1.Models;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using System.Linq;
 
-namespace EnergyDashboardAPI1.Controllers
+namespace EnergyDashboard1.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     public class SpacesController : ControllerBase
     {
-        private readonly EnergyDbContext _context;
+        private readonly EnergyContext _context;
+        private readonly ILogger<SpacesController> _logger;
 
-        public SpacesController(EnergyDbContext context)
+        public SpacesController(EnergyContext context, ILogger<SpacesController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         [HttpGet]
         public async Task<ActionResult> GetSpaces()
         {
+            _logger.LogInformation("GetSpaces() called.");
             try
             {
                 var spaces = await _context.Spaces
                     .Select(s => new
                     {
                         s.SpaceId,
-                        s.SpaceName
+                        s.SpaceName,
+                        s.ParentSpaceId
                     })
                     .ToListAsync();
+                _logger.LogInformation("Fetched {Count} spaces from database.", spaces.Count);
 
                 return Ok(spaces);
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error occurred in GetSpaces()");
                 return StatusCode(500, "Error: " + ex.Message);
             }
         }
         [HttpGet("{id}/all-child-space-ids")]
         public async Task<ActionResult<List<int>>> GetAllChildSpaceIds(int id)
         {
+            _logger.LogInformation("GetAllChildSpaceIds({Id}) called.", id);
+
             var allSpaces = await _context.Spaces.ToListAsync();
+            _logger.LogInformation("Total spaces loaded: {Count}", allSpaces.Count);
 
             List<int> result = new List<int> { id };
             Queue<int> queue = new Queue<int>();
@@ -330,63 +352,83 @@ namespace EnergyDashboardAPI1.Controllers
                     queue.Enqueue(child);
                 }
             }
+            _logger.LogInformation("Total child spaces (including root): {Count}", result.Count);
 
             return result;
         }
     }
 }
 
-
 //metercontroller.cs
+using EnergyDashboard1.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using EnergyDashboardAPI1.Models;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
-namespace EnergyDashboardAPI1.Controllers
+namespace EnergyDashboard1.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     public class MetersController : ControllerBase
     {
-        private readonly EnergyDbContext _context;
+        private readonly EnergyContext _context;
+        private readonly ILogger<MetersController> _logger;
 
-        public MetersController(EnergyDbContext context)
+        public MetersController(EnergyContext context, ILogger<MetersController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Meter>>> GetMeters()
         {
-            return await _context.Meters.ToListAsync();
+            _logger.LogInformation("GetMeters called");
+
+            try
+            {
+                var meters = await _context.Meters.ToListAsync();
+
+                _logger.LogInformation("Retrieved {Count} meters from database", meters.Count);
+
+                return Ok(meters);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving meters.");
+                return StatusCode(500, "Internal server error: " + ex.Message);
+            }
         }
     }
 }
 
 
 //meterreadingscontroller.cs
-using EnergyDashboardAPI1.DTOs;
-using EnergyDashboardAPI1.DTOs.EnergyDashboardAPI1.DTOs;
-using EnergyDashboardAPI1.Models;
+using EnergyDashboard1.Models;
+using EnergyDashboard1.DTOs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace EnergyDashboardAPI1.Controllers
+namespace EnergyDashboard1.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Admin,AccountManager")]
     public class MeterReadingsController : ControllerBase
     {
-        private readonly EnergyDbContext _context;
+        private readonly EnergyContext _context;
+        private readonly ILogger<MeterReadingsController> _logger;
 
-        public MeterReadingsController(EnergyDbContext context)
+        public MeterReadingsController(EnergyContext context, ILogger<MeterReadingsController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         [HttpGet("meterreadings")]
@@ -395,6 +437,7 @@ namespace EnergyDashboardAPI1.Controllers
     [FromQuery] DateTime? startTime = null,
     [FromQuery] DateTime? endTime = null)
         {
+            _logger.LogInformation("GetMeterReadings called with spaceId={SpaceId}, startTime={Start}, endTime={End}", spaceId, startTime, endTime);
             try
             {
                 IQueryable<MeterReading> query = _context.MeterReadings
@@ -415,12 +458,13 @@ namespace EnergyDashboardAPI1.Controllers
                 }
 
                 var result = await query.ToListAsync();
+                _logger.LogInformation("Found {Count} meter readings.", result.Count);
 
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                
+                _logger.LogError(ex, "Error in GetMeterReadings");
                 return StatusCode(500, new { message = "Internal server error", detail = ex.Message });
             }
         }
@@ -428,13 +472,17 @@ namespace EnergyDashboardAPI1.Controllers
         [HttpGet("energy-consumption/{meterId}")]
         public async Task<IActionResult> GetEnergyConsumption(int meterId)
         {
+            _logger.LogInformation("GetEnergyConsumption called for MeterID={MeterId}", meterId);
             var readings = await _context.MeterReadings
                 .Where(r => r.MeterID == meterId)
                 .OrderBy(r => r.ReadingTimestamp)
                 .ToListAsync();
 
             if (readings.Count < 2)
+            {
+                _logger.LogWarning("Not enough data to calculate energy consumption for meterId={MeterId}", meterId);
                 return Ok("Not enough data to calculate consumption.");
+            }
 
             decimal totalConsumption = 0;
 
@@ -443,10 +491,11 @@ namespace EnergyDashboardAPI1.Controllers
                 var prev = readings[i - 1].Value;
                 var curr = readings[i].Value;
 
-                if (curr >= prev) 
+                if (curr >= prev)
                     totalConsumption += (curr - prev);
             }
 
+            _logger.LogInformation("Total energy consumed for MeterID={MeterId} is {TotalConsumption}", meterId, totalConsumption);
             return Ok(new
             {
                 MeterID = meterId,
@@ -456,10 +505,10 @@ namespace EnergyDashboardAPI1.Controllers
         [HttpGet("energy-by-space/{spaceId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetEnergyBySpace(int spaceId)
         {
-            
+            _logger.LogInformation("GetEnergyBySpace called for space {SpaceId}", spaceId);
             var allSpaces = await _context.Spaces.ToListAsync();
 
-            
+
             List<int> childSpaceIds = new List<int> { spaceId };
             Queue<int> queue = new Queue<int>();
             queue.Enqueue(spaceId);
@@ -479,7 +528,7 @@ namespace EnergyDashboardAPI1.Controllers
                 }
             }
 
-            
+
             var readings = await _context.MeterReadings
                 .Include(r => r.Meter)
                 .Where(r => childSpaceIds.Contains(r.Meter.SpaceId))
@@ -487,7 +536,7 @@ namespace EnergyDashboardAPI1.Controllers
                 .ThenBy(r => r.ReadingTimestamp)
                 .ToListAsync();
 
-            
+
             var consumption = readings
                 .GroupBy(r => r.MeterID)
                 .Select(g => new
@@ -498,21 +547,21 @@ namespace EnergyDashboardAPI1.Controllers
                         .Select((r, index) => index == 0 ? 0 : r.Value - g.ElementAt(index - 1).Value)
                         .Sum()
                 });
-
+            _logger.LogInformation("Calculated energy by space for spaceId={SpaceId}", spaceId);
             return Ok(consumption);
         }
 
         [HttpGet("energy-consumption-by-time")]
         public async Task<IActionResult> GetEnergyConsumptionByTime(DateTime startTime, DateTime endTime)
         {
+            _logger.LogInformation("GetEnergyConsumptionByTime called with startTime={Start}, endTime={End}", startTime, endTime);
             Console.WriteLine($"[DEBUG] StartTime: {startTime}, EndTime: {endTime}");
-
             var readings = await _context.MeterReadings
                 .Where(r => r.ReadingTimestamp >= startTime && r.ReadingTimestamp <= endTime)
                 .OrderBy(r => r.MeterID)
                 .ThenBy(r => r.ReadingTimestamp)
                 .ToListAsync();
-
+            _logger.LogInformation("Found {Count} readings in the given time range.", readings.Count);
             Console.WriteLine($"[DEBUG] Found {readings.Count} readings");
 
             return Ok(readings);
@@ -520,373 +569,275 @@ namespace EnergyDashboardAPI1.Controllers
 
 
 
-
-           [HttpGet("energy-summary")]
-    public async Task<IActionResult> GetEnergySummary(
+        [HttpGet("energy-summary")]
+        public async Task<IActionResult> GetEnergySummary(
         [FromQuery] List<int>? spaceIds,
         [FromQuery] DateTime startTime,
-        [FromQuery] DateTime endTime)
-    {
-        if (startTime >= endTime)
-        {
-            return BadRequest(new ApiError
-            {
-                StatusCode = 400,
-                Message = "Start time must be earlier than end time."
-            });
-        }
-
-        if (spaceIds != null && spaceIds.Any(id => id <= 0))
-        {
-            return BadRequest(new ApiError
-            {
-                StatusCode = 400,
-                Message = "All space IDs must be positive integers."
-            });
-        }
-
-        var meterQuery = _context.Meters.AsQueryable();
-
-        if (spaceIds != null && spaceIds.Any())
-        {
-            meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
-        }
-
-        var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
-
-        if (!meterIds.Any())
-        {
-            return NotFound(new ApiError
-            {
-                StatusCode = 404,
-                Message = "No meters found for the given space IDs."
-            });
-        }
-
-        var readings = await _context.MeterReadings
-            .Where(r => meterIds.Contains(r.MeterID)
-                     && r.ReadingTimestamp >= startTime
-                     && r.ReadingTimestamp <= endTime)
-            .OrderBy(r => r.ReadingTimestamp)
-            .ToListAsync();
-
-        if (readings.Count < 2)
-        {
-            return Ok(new
-            {
-                totalEnergyConsumption = 0,
-                hourlyAggregated = new List<object>()
-            });
-        }
-
-        var hourlyAggregated = readings
-            .GroupBy(r => new
-            {
-                r.MeterID,
-                Hour = r.ReadingTimestamp
-                        .AddMinutes(-r.ReadingTimestamp.Minute)
-                        .AddSeconds(-r.ReadingTimestamp.Second)
-                        .AddMilliseconds(-r.ReadingTimestamp.Millisecond)
-            })
-            .Select(g => new
-            {
-                MeterId = g.Key.MeterID,
-                Timestamp = g.Key.Hour,
-                Reading = g.OrderBy(r => r.ReadingTimestamp).First().Value
-            })
-            .OrderBy(r => r.Timestamp)
-            .ToList();
-
-        var groupedList = hourlyAggregated
-            .GroupBy(r => r.Timestamp)
-            .OrderBy(g => g.Key)
-            .ToList();
-
-        var hourlyGrouped = groupedList
-            .Select((group, index) =>
-            {
-                var previous = index > 0 ? groupedList[index - 1] : null;
-                decimal totalDiff = 0;
-
-                if (previous != null)
-                {
-                    foreach (var curr in group)
-                    {
-                        var prev = previous.FirstOrDefault(p => p.MeterId == curr.MeterId);
-                        if (prev != null)
-                        {
-                            totalDiff += Math.Max(0, curr.Reading - prev.Reading);
-                        }
-                    }
-                }
-
-                return new
-                {
-                    timestamp = group.Key,
-                    energyConsumed = Math.Round(totalDiff, 2)
-                };
-            })
-            .Skip(1) 
-            .ToList();
-
-        var totalEnergy = Math.Round(hourlyGrouped.Sum(h => h.energyConsumed), 2);
-
-        return Ok(new
-        {
-            totalEnergyConsumption = totalEnergy,
-            hourlyAggregated = hourlyGrouped
-        });
-    }
-
-
-    [HttpGet("space-wise-energy")]
-    public async Task<IActionResult> GetSpaceWiseEnergy(
-    [FromQuery] List<int>? spaceIds,
-    [FromQuery] DateTime? startTime,
-    [FromQuery] DateTime? endTime)
-    {
-        if (!startTime.HasValue || !endTime.HasValue)
-        {
-            return BadRequest(new ApiError
-            {
-                StatusCode = 400,
-                Message = "Start time and end time are required."
-            });
-        }
-
-        if (startTime >= endTime)
-        {
-            return BadRequest(new ApiError
-            {
-                StatusCode = 400,
-                Message = "Start time must be earlier than end time."
-            });
-        }
-
-        if (spaceIds != null && spaceIds.Any(id => id <= 0))
-        {
-            return BadRequest(new ApiError
-            {
-                StatusCode = 400,
-                Message = "All space IDs must be positive integers."
-            });
-        }
-        var meterQuery = _context.Meters.AsQueryable();
-
-        if (spaceIds != null && spaceIds.Any())
-        {
-            meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
-        }
-
-        var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
-
-        if (!meterIds.Any())
-        {
-            return NotFound(new ApiError
-            {
-                StatusCode = 404,
-                Message = "No meters found for the given space IDs."
-            });
-        }
-
-        var readings = await _context.MeterReadings
-            .Where(r => meterIds.Contains(r.MeterID) && r.ReadingTimestamp >= startTime && r.ReadingTimestamp <= endTime)
-            .OrderBy(r => r.ReadingTimestamp)
-            .ToListAsync();
-        if (!readings.Any())
-        {
-            return NotFound(new ApiError
-            {
-                StatusCode = 404,
-                Message = "No readings found for the given time range."
-            });
-        }
-
-
-        var groupedReadings = readings
-            .GroupBy(r => r.MeterID)
-            .ToList();
-
-        var spaceMeterMap = await _context.Meters
-            .Where(m => meterIds.Contains(m.MeterID))
-            .ToDictionaryAsync(m => m.MeterID, m => m.SpaceId);
-
-        var totalBySpace = new Dictionary<int, decimal>();
-        var hourlyBySpace = new Dictionary<int, Dictionary<DateTime, decimal>>();
-
-        foreach (var meterGroup in groupedReadings)
-        {
-            var readingsList = meterGroup.OrderBy(r => r.ReadingTimestamp).ToList();
-            for (int i = 1; i < readingsList.Count; i++)
-            {
-                var prev = readingsList[i - 1];
-                var curr = readingsList[i];
-
-                if (curr.ReadingTimestamp.Subtract(prev.ReadingTimestamp).TotalHours != 1)
-                    continue;
-
-                var diff = Math.Max(0, curr.Value - prev.Value);
-                var hour = curr.ReadingTimestamp.AddMinutes(-curr.ReadingTimestamp.Minute).AddSeconds(-curr.ReadingTimestamp.Second).AddMilliseconds(-curr.ReadingTimestamp.Millisecond);
-                if (!spaceMeterMap.TryGetValue(curr.MeterID, out var spaceId))
-                    continue;
-
-                if (!totalBySpace.ContainsKey(spaceId))
-                    totalBySpace[spaceId] = 0;
-
-                totalBySpace[spaceId] += diff;
-
-                if (!hourlyBySpace.ContainsKey(spaceId))
-                    hourlyBySpace[spaceId] = new Dictionary<DateTime, decimal>();
-
-                if (!hourlyBySpace[spaceId].ContainsKey(hour))
-                    hourlyBySpace[spaceId][hour] = 0;
-
-                hourlyBySpace[spaceId][hour] += diff;
-            }
-        }
-
-        var result = new
-        {
-            totalBySpace = totalBySpace.Select(kvp => new
-            {
-                spaceId = kvp.Key,
-                energyConsumed = kvp.Value
-            }),
-            hourlyBySpace = hourlyBySpace.Select(kvp => new
-            {
-                spaceId = kvp.Key,
-                hourly = kvp.Value.Select(h => new
-                {
-                    timestamp = h.Key,
-                    energyConsumed = h.Value
-                })
-            })
-        };
-
-        return Ok(result);
-    }
-
-        [HttpGet("aggregated-summary")]
-        public async Task<IActionResult> GetAggregatedSummary(
-        [FromQuery] List<int> spaceIds,
-        [FromQuery] DateTime startTime,
         [FromQuery] DateTime endTime,
-        [FromQuery] string groupBy)
+        [FromQuery] string granularity = "hourly")
         {
-            if (spaceIds == null || !spaceIds.Any())
-                return BadRequest("Space IDs are required.");
-            if (endTime <= startTime)
-                return BadRequest("End time must be after start time.");
+            _logger.LogInformation("GetEnergySummary called with {Count} spaceIds, start={Start}, end={End}",
+                spaceIds?.Count ?? 0, startTime, endTime);
+            if (startTime >= endTime)
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "Start time must be earlier than end time."
+                });
+            }
+            if (spaceIds != null && spaceIds.Any(id => id <= 0))
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "All space IDs must be positive integers."
+                });
+            }
 
-            var spaceMeterIds = await _context.Meters
-                .Where(m => spaceIds.Contains(m.SpaceId))
-                .Select(m => m.MeterID)
-                .ToListAsync();
+            var validGranularities = new[] { "hourly", "daily", "monthly" };
+            if (!validGranularities.Contains(granularity.ToLower()))
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "Granularity must be one of: hourly, daily, monthly."
+                });
+            }
 
-            var readings = await _context.MeterReadings
-                .Where(r => spaceMeterIds.Contains(r.MeterID) &&
-                            r.ReadingTimestamp >= startTime &&
-                            r.ReadingTimestamp <= endTime)
-                .OrderBy(r => r.ReadingTimestamp)
-                .ToListAsync();
+            var meterQuery = _context.Meters.AsQueryable();
 
-            var grouped = groupBy.ToLower() == "monthly"
-            ? readings
-           .GroupBy(r => new { r.ReadingTimestamp.Year, r.ReadingTimestamp.Month })
-           .Select(g => new {
-            Period = $"{g.Key.Year}-{g.Key.Month:D2}", 
-            TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
-          })
-    :       readings
-           .GroupBy(r => r.ReadingTimestamp.Date)
-           .Select(g => new {
-            Period = g.Key.ToString("yyyy-MM-dd"), 
-            TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
-        });
+            if (spaceIds != null && spaceIds.Any())
+            {
+                meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
+            }
 
-
-            return Ok(grouped);
-        }
-
-
-        [HttpGet("energy-aggregate")]
-        public async Task<IActionResult> GetEnergyAggregate(
-       [FromQuery] List<int> spaceIds,
-       [FromQuery] DateTime startTime,
-       [FromQuery] DateTime endTime)
-        {
-            if (spaceIds == null || !spaceIds.Any())
-                return BadRequest("Space IDs are required.");
-            if (endTime <= startTime)
-                return BadRequest("End time must be after start time.");
-
-            var meterIds = await _context.Meters
-                .Where(m => spaceIds.Contains(m.SpaceId))
-                .Select(m => m.MeterID)
-                .ToListAsync();
+            var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
 
             if (!meterIds.Any())
-                return NotFound("No meters found for the given spaces.");
+            {
+                _logger.LogWarning("No meters found for the given space IDs: {SpaceIds}", spaceIds);
+                return NotFound(new ApiError
+                {
+                    StatusCode = 404,
+                    Message = "No meters found for the given space IDs."
+                });
+            }
 
             var readings = await _context.MeterReadings
                 .Where(r => meterIds.Contains(r.MeterID)
-                            && r.ReadingTimestamp >= startTime
-                            && r.ReadingTimestamp <= endTime)
+                         && r.ReadingTimestamp >= startTime
+                         && r.ReadingTimestamp <= endTime)
                 .OrderBy(r => r.ReadingTimestamp)
                 .ToListAsync();
 
-            if (!readings.Any())
-                return NotFound("No readings found for the given criteria.");
-
-            var totalEnergy = readings
-                .GroupBy(r => r.MeterID)
-                .Sum(g => g.Max(x => x.Value) - g.Min(x => x.Value));
-
-            string aggregationLevel;
-            var duration = (endTime - startTime).TotalDays;
-
-            if (duration <= 2)
-                aggregationLevel = "hourly";
-            else if (duration <= 60)
-                aggregationLevel = "daily";
-            else
-                aggregationLevel = "monthly";
-
-            var aggregatedList = aggregationLevel switch
+            if (readings.Count < 2)
             {
-                "hourly" => readings
-                    .GroupBy(r => new { r.ReadingTimestamp.Date, r.ReadingTimestamp.Hour })
-                    .Select(g => new {
-                        Period = $"{g.Key.Date:yyyy-MM-dd} {g.Key.Hour:D2}:00",
-                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
-                    }),
+                _logger.LogWarning("Not enough readings to calculate energy consumption for the given time range.");
+                return Ok(new
+                {
+                    totalEnergyConsumption = 0,
+                    hourlyAggregated = new List<object>()
+                });
+            }
 
-                "monthly" => readings
-                    .GroupBy(r => new { r.ReadingTimestamp.Year, r.ReadingTimestamp.Month })
-                    .Select(g => new {
-                        Period = $"{g.Key.Year}-{g.Key.Month:D2}",
-                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
-                    }),
-
-                _ => readings
-                    .GroupBy(r => r.ReadingTimestamp.Date)
-                    .Select(g => new {
-                        Period = g.Key.ToString("yyyy-MM-dd"),
-                        TotalEnergy = g.Max(x => x.Value) - g.Min(x => x.Value)
-                    })
+            Func<DateTime, DateTime> RoundTimestamp = granularity.ToLower() switch
+            {
+                "hourly" => ts => new DateTime(ts.Year, ts.Month, ts.Day, ts.Hour, 0, 0),
+                "daily" => ts => ts.Date,
+                "monthly" => ts => new DateTime(ts.Year, ts.Month, 1),
+                _ => ts => ts
             };
+            var aggregatedReadings = readings
+                .GroupBy(r => new
+                {
+                    r.MeterID,
+                    TimeBucket = RoundTimestamp(r.ReadingTimestamp)
+                })
+                .Select(g => new
+                {
+                    MeterId = g.Key.MeterID,
+                    Timestamp = g.Key.TimeBucket,
+                    Reading = g.OrderBy(r => r.ReadingTimestamp).First().Value
+                })
+                .OrderBy(r => r.Timestamp)
+                .ToList();
 
+
+            var groupedList = aggregatedReadings
+                .GroupBy(r => r.Timestamp)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            var aggregated = groupedList
+                .Select((group, index) =>
+                {
+                    var previous = index > 0 ? groupedList[index - 1] : null;
+
+                    decimal totalDiff = 0;
+                    if (previous != null)
+                    {
+                        foreach (var curr in group)
+                        {
+                            var prev = previous.FirstOrDefault(p => p.MeterId == curr.MeterId);
+                            if (prev != null)
+                            {
+                                totalDiff += Math.Max(0, curr.Reading - prev.Reading);
+                            }
+                        }
+                    }
+
+                    return new
+                    {
+                        timestamp = group.Key,
+                        energyConsumed = Math.Round(totalDiff, 2)
+                    };
+                })
+                .Skip(1)
+                .ToList();
+
+            var totalEnergy = Math.Round(aggregated.Sum(h => h.energyConsumed), 2);
+            _logger.LogInformation("Hourly energy summary: totalEnergy={Total}, groupedHours={Count}", totalEnergy, aggregated.Count);
             return Ok(new
             {
-                totalEnergy,
-                aggregationLevel,
-                aggregatedList
+                totalEnergyConsumption = totalEnergy,
+                aggregated
             });
+        }
+
+
+        [HttpGet("space-wise-energy")]
+        public async Task<IActionResult> GetSpaceWiseEnergy(
+        [FromQuery] List<int>? spaceIds,
+        [FromQuery] DateTime? startTime,
+        [FromQuery] DateTime? endTime)
+        {
+            _logger.LogInformation("GetSpaceWiseEnergy called with {Count} spaceIds, start={Start}, end={End}",
+                spaceIds?.Count ?? 0, startTime, endTime);
+            if (!startTime.HasValue || !endTime.HasValue)
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "Start time and end time are required."
+                });
+            }
+            if (startTime >= endTime)
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "Start time must be earlier than end time."
+                });
+            }
+            if (spaceIds != null && spaceIds.Any(id => id <= 0))
+            {
+                return BadRequest(new ApiError
+                {
+                    StatusCode = 400,
+                    Message = "All space IDs must be positive integers."
+                });
+            }
+
+            var meterQuery = _context.Meters.AsQueryable();
+
+            if (spaceIds != null && spaceIds.Any())
+            {
+                meterQuery = meterQuery.Where(m => spaceIds.Contains(m.SpaceId));
+            }
+
+            var meterIds = await meterQuery.Select(m => m.MeterID).ToListAsync();
+            if (!meterIds.Any())
+            {
+                return NotFound(new ApiError
+                {
+                    StatusCode = 404,
+                    Message = "No meters found for the given space IDs."
+                });
+            }
+
+            var readings = await _context.MeterReadings
+                .Where(r => meterIds.Contains(r.MeterID) && r.ReadingTimestamp >= startTime && r.ReadingTimestamp <= endTime)
+                .OrderBy(r => r.ReadingTimestamp)
+                .ToListAsync();
+            if (!readings.Any())
+            {
+                return NotFound(new ApiError
+                {
+                    StatusCode = 404,
+                    Message = "No readings found for the given time range."
+                });
+            }
+
+            var groupedReadings = readings
+                .GroupBy(r => r.MeterID)
+                .ToList();
+
+            var spaceMeterMap = await _context.Meters
+                .Where(m => meterIds.Contains(m.MeterID))
+                .ToDictionaryAsync(m => m.MeterID, m => m.SpaceId);
+
+            var totalBySpace = new Dictionary<int, decimal>();
+            var hourlyBySpace = new Dictionary<int, Dictionary<DateTime, decimal>>();
+
+            foreach (var meterGroup in groupedReadings)
+            {
+                var readingsList = meterGroup.OrderBy(r => r.ReadingTimestamp).ToList();
+                for (int i = 1; i < readingsList.Count; i++)
+                {
+                    var prev = readingsList[i - 1];
+                    var curr = readingsList[i];
+
+                    if (curr.ReadingTimestamp.Subtract(prev.ReadingTimestamp).TotalHours != 1)
+                        continue;
+
+                    var diff = Math.Max(0, curr.Value - prev.Value);
+                    var hour = curr.ReadingTimestamp.AddMinutes(-curr.ReadingTimestamp.Minute).AddSeconds(-curr.ReadingTimestamp.Second).AddMilliseconds(-curr.ReadingTimestamp.Millisecond);
+                    if (!spaceMeterMap.TryGetValue(curr.MeterID, out var spaceId))
+                        continue;
+
+                    if (!totalBySpace.ContainsKey(spaceId))
+                        totalBySpace[spaceId] = 0;
+
+                    totalBySpace[spaceId] += diff;
+
+                    if (!hourlyBySpace.ContainsKey(spaceId))
+                        hourlyBySpace[spaceId] = new Dictionary<DateTime, decimal>();
+
+                    if (!hourlyBySpace[spaceId].ContainsKey(hour))
+                        hourlyBySpace[spaceId][hour] = 0;
+
+                    hourlyBySpace[spaceId][hour] += diff;
+                }
+            }
+            var spaceNames = await _context.Spaces
+                .Where(s => totalBySpace.Keys.Contains(s.SpaceId))
+                .ToDictionaryAsync(s => s.SpaceId, s => s.SpaceName);
+
+            var result = new
+            {
+                totalBySpace = totalBySpace.Select(kvp => new
+                {
+                    spaceId = kvp.Key,
+                    spaceName = spaceNames.ContainsKey(kvp.Key) ? spaceNames[kvp.Key] : $"Space {kvp.Key}",
+                    energyConsumed = kvp.Value
+                }),
+                hourlyBySpace = hourlyBySpace.Select(kvp => new
+                {
+                    spaceId = kvp.Key,
+                    hourly = kvp.Value.Select(h => new
+                    {
+                        timestamp = h.Key,
+                        energyConsumed = h.Value
+                    })
+                })
+            };
+            _logger.LogInformation("Finished processing space-wise energy.");
+            return Ok(result);
         }
 
     }
 }
-
 
 
 
@@ -909,30 +860,39 @@ namespace EnergyDashboardAPI1.DTOs
 
 
 //sitescontroller.cs
-using EnergyDashboardAPI1.Models;
-using Microsoft.EntityFrameworkCore;
+using EnergyDashboard1.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
 
-namespace EnergyDashboardAPI1.Controllers
+namespace EnergyDashboard1.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    //[Authorize(Roles = "Admin,EnergyManager")]
     public class SitesController : ControllerBase
     {
-        private readonly EnergyDbContext _context;
+        private readonly EnergyContext _context;
+        private readonly ILogger<SitesController> _logger;
 
-        public SitesController(EnergyDbContext context)
+
+        public SitesController(EnergyContext context, ILogger<SitesController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
-        // POST: api/Sites
+
         [HttpPost]
         public async Task<IActionResult> PostSite([FromBody] Site site)
         {
+            _logger.LogInformation("PostSite() called with site name: {SiteName}", site?.SiteName);
             if (!ModelState.IsValid)
+            {
+                _logger.LogWarning("Invalid model state in PostSite().");
                 return BadRequest(ModelState);
+            }
 
             _context.Sites.Add(site);
             await _context.SaveChangesAsync();
@@ -940,30 +900,39 @@ namespace EnergyDashboardAPI1.Controllers
             return CreatedAtAction(nameof(GetSingleSite), new { id = site.SiteId }, site);
         }
 
-        // GET: api/Sites/Single
+
         [HttpGet("Single")]
         public async Task<ActionResult<Site>> GetSingleSite()
         {
+            _logger.LogInformation("GetSingleSite() called.");
             var site = await _context.Sites.FirstOrDefaultAsync();
 
             if (site == null)
+            {
+                _logger.LogWarning("No site found in GetSingleSite().");
                 return NotFound("No site data found.");
-
+            }
+            _logger.LogInformation("Returning site with ID: {SiteId}", site.SiteId);
             return Ok(site);
         }
 
-        // PUT: api/Sites/{id}
+
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateSite(int id, [FromBody] Site updatedSite)
         {
+            _logger.LogInformation("UpdateSite() called for SiteId: {SiteId}", id);
             if (id != updatedSite.SiteId)
+            {
+                _logger.LogWarning("ID mismatch in UpdateSite(). URL ID: {Id}, Body ID: {BodyId}", id, updatedSite.SiteId);
                 return BadRequest("ID mismatch.");
-
+            }
             var existingSite = await _context.Sites.FindAsync(id);
             if (existingSite == null)
+            {
+                _logger.LogWarning("Site not found in UpdateSite() for ID: {SiteId}", id);
                 return NotFound("Site not found.");
+            }
 
-            // Update fields
             existingSite.SiteName = updatedSite.SiteName;
             existingSite.Address = updatedSite.Address;
             existingSite.ContactPerson = updatedSite.ContactPerson;
@@ -971,6 +940,7 @@ namespace EnergyDashboardAPI1.Controllers
             existingSite.ContactPhone = updatedSite.ContactPhone;
 
             await _context.SaveChangesAsync();
+            _logger.LogInformation("Site updated successfully for ID: {SiteId}", id);
             return NoContent();
         }
     }
@@ -1053,81 +1023,101 @@ namespace EnergyDashboardAPI1.DTOs
 
 
 //authcontroller.cs
-using EnergyDashboardAPI1.DTOs;
-using EnergyDashboardAPI1.Models;
+using EnergyDashboard1.Models;
+using EnergyDashboard1.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
------------------------------------>
-using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-<----------------------------------------------
+
 [Route("api/[controller]")]
 [ApiController]
 public class AuthController : ControllerBase
 {
-    private readonly EnergyDbContext _context;
------------------------------------------------>
+    private readonly EnergyContext _context;
     private readonly IConfiguration _config;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(EnergyContext context, IConfiguration config)
+    public AuthController(EnergyContext context, IConfiguration config, ILogger<AuthController> logger)
     {
-    _context = context;
-    _config = config;
+        _context = context;
+        _config = config;
+        _logger = logger;
     }
+
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest? request)
     {
+        _logger.LogInformation("Login() called with Username: {Username}", request?.Username);
         try
         {
+            _logger.LogWarning("Login failed due to missing credentials.");
             if (request == null || string.IsNullOrEmpty(request.Username) || string.IsNullOrEmpty(request.Password))
                 return BadRequest("Username and password are required.");
 
             var user = await _context.Users
+                .Include(u => u.Role)
                 .FirstOrDefaultAsync(u => u.Username.ToLower() == request.Username.ToLower());
 
             if (user == null || user.Password != request.Password)
+            {
+                _logger.LogWarning("Login failed for Username: {Username}", request.Username);
                 return Unauthorized("Invalid username or password.");
+            }
 
-            var token = GenerateJwtToken(user.Username);
-            return Ok(new { token, message = "Login successful", user.Username });
+            var token = GenerateJwtToken(user);
+            _logger.LogInformation("Login successful for user: {Username}", user.Username);
+            return Ok(new { token, message = "Login successful", user.Username, role = user.Role?.RoleName ?? "Unknown" });
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Exception occurred during login for user: {Username}", request?.Username);
             return StatusCode(500, $"Internal server error: {ex.Message}");
         }
     }
-
-
-    private string GenerateJwtToken(string username)
+    private string GenerateJwtToken(User user)
     {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("mysupersecretkeythatisatleast32chars!")); // Match the one in Program.cs
+        var jwtSettings = _config.GetSection("Jwt");
+        _logger.LogInformation("Token generated successfully for user: {Username}", user);
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var roleName = _context.Roles.FirstOrDefault(r => r.RoleId == user.RoleId)?.RoleName ?? "Viewer";
 
         var claims = new[]
         {
-        new Claim(ClaimTypes.Name, username)
+        new Claim(ClaimTypes.Name, user.Username),
+
+        new Claim(ClaimTypes.Role, roleName),
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
     };
 
-        var token = new JwtSecurityToken(
-            issuer: "yourdomain.com",
-            audience: "yourdomain.com",
-            claims: claims,
-            expires: DateTime.Now.AddHours(1),
-            signingCredentials: credentials);
+        // 🔍 Log the claims to debug
+        Console.WriteLine("JWT Claims:");
+        foreach (var claim in claims)
+        {
+            Console.WriteLine($" - {claim.Type}: {claim.Value}");
+        }
 
+        var token = new JwtSecurityToken(
+            issuer: jwtSettings["Issuer"],
+            audience: jwtSettings["Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["ExpiresInMinutes"])),
+            signingCredentials: credentials
+        );
+        _logger.LogInformation("Token generated successfully for user: {Username}", user);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
 }
-<-------------------------------------------------------------------------
 
 //appsettings.json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=Aditi\\SQLEXPRESS;Database=EnergyDashboard;Integrated Security=True;TrustServerCertificate=True;"
+    "DefaultConnection": "Server=DESKTOP-MU3SVUK\\SQLEXPRESS;Database=EnergyDashboard;Trusted_Connection=True;TrustServerCertificate=True;"
   },
   "Jwt": {
     "Issuer": "yourdomain.com",
@@ -1135,14 +1125,50 @@ public class AuthController : ControllerBase
     "Key": "mysupersecretkeythatisatleast32chars!",
     "ExpiresInMinutes": 60
   },
-  "Logging": {
-    "LogLevel": {
+  "Serilog": {
+    "Using": [ "Serilog.Sinks.File" ],
+    "MinimumLevel": {
       "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
+      "Override": {
+        "Microsoft": "Warning",
+        "Microsoft.AspNetCore": "Warning"
+      }
+    },
+    "WriteTo": [
+      {
+        "Name": "Console"
+      },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "Logs/server-log.txt", 
+          "rollingInterval": "Day", 
+          "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
+        }
+      }
+    ],
+    "Enrich": [ "FromLogContext", "WithMachineName", "WithThreadId" ],
+    "Properties": {
+      "Application": "EnergyDashboard"
     }
   },
   "AllowedHosts": "*"
 }
+
+
+//appsettingsdevelopme.json
+{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug",
+      "Override": {
+        "Microsoft": "Information",
+        "Microsoft.AspNetCore": "Information"
+      }
+    }
+  }
+}
+
 
 
 
