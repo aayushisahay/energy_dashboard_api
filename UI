@@ -1,0 +1,2141 @@
+// run " npm install bootstrap " in terminal before changing the code to implement the form //
+//run "npm install react-datepicker"//
+// run "npm install react-router-dom"//
+
+//EnergyChart.jsx
+
+import React, { useEffect, useState } from 'react';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import { getEnergySummary, getSpaceWiseEnergy } from '../services/api';
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+const EnergyChart = () => {
+  const [lineChartOptions, setLineChartOptions] = useState(null);
+  const [pieChartOptions, setPieChartOptions] = useState(null);
+
+  const startTime = '2023-06-01T00:00:00';
+  const endTime = '2025-05-31T23:00:00';
+  const spaceIds = [1, 2, 3, 4, 6]; 
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const lineData = await getEnergySummary(spaceIds, startTime, endTime);
+
+        const categories = lineData.hourlyAggregated.map(item => {
+          const date = new Date(item.timestamp);
+          return date.toLocaleString(undefined, {
+            hour12: false,
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        });
+
+        const values = lineData.hourlyAggregated.map(item => item.energyConsumed);
+
+        setLineChartOptions({
+          chart: { height: 400, width: 1200 },
+          title: { text: 'Energy Consumption Over Time' },
+          xAxis: {
+            categories,
+            labels: {
+              rotation: 45,
+              style: { fontSize: '10px' }
+            }
+          },
+          yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+          series: [{ name: 'Date', data: values }],
+          tooltip: {
+            formatter: function () {
+              return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+            }
+          }
+        });
+
+        const pieData = await getSpaceWiseEnergy(spaceIds, startTime, endTime);
+        const pieSeries = pieData.totalBySpace
+          .sort((a, b) => b.energyConsumed - a.energyConsumed)
+          .slice(0, 5)
+          .map(space => ({
+            name: `Space ${space.spaceId}`,
+            y: space.energyConsumed
+          }));
+
+        setPieChartOptions({
+          chart: { type: 'pie', height: 300, width: 500 },
+          title: { text: 'Top 5 Spaces by Energy Consumption' },
+          series: [{
+            name: 'Energy Consumed (kWh)',
+            data: pieSeries
+          }],
+          tooltip: {
+            pointFormat: '{series.name}: <b>{point.y:.2f} kWh</b>'
+          },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              dataLabels: {
+                enabled: true,
+                format: '<b>{point.name}</b>: {point.percentage:.1f} %'
+              }
+            }
+          }
+        });
+
+      } catch (error) {
+        console.error("Error loading charts:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  return (
+    <div className="container py-4">
+      <div className="mb-5">
+        {lineChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
+        ) : (
+          <p>Loading line chart...</p>
+        )}
+      </div>
+
+      <div className="mb-5">
+        {pieChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
+        ) : (
+          <p>Loading pie chart...</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default EnergyChart;
+
+
+//api.js
+
+import axios from 'axios';
+
+const BASE_URL = 'http://localhost:5076/api';
+
+// GET summary of energy readings for given space(s) and time range
+export const getEnergySummary = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/energy-summary`, {
+      params: { spaceIds, startTime, endTime },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error (getEnergySummary):", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// GET energy data space-wise
+export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/MeterReadings/space-wise-energy`, {
+      params: { spaceIds, startTime, endTime },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("API Error (getSpaceWiseEnergy):", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// POST a new site
+export const addSite = async (siteData) => {
+  try {
+    const response = await axios.post(`${BASE_URL}/Sites`, siteData);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (addSite):", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// GET details of a single site
+export const getSingleSite = async () => {
+  try {
+    const response = await axios.get(`${BASE_URL}/Sites/Single`);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (getSingleSite):", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// PUT (update) site by ID
+export const updateSite = async (id, siteData) => {
+  try {
+    const response = await axios.put(`${BASE_URL}/Sites/${id}`, siteData);
+    return response.data;
+  } catch (error) {
+    console.error("API Error (updateSite):", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+
+//app.js 
+
+import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+import SideBar from './components/SideBar';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+
+function App() {
+  return (
+    <Router>
+      <div>
+        <header className="app-header">
+          <h1 className="app-title">Vatika Business Park</h1>
+        </header>
+
+        <div className="d-flex mt-5">
+          <SideBar />
+          <div className="flex-grow-1 p-4">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/logout" element={<Logout />} />
+            </Routes>
+          </div>
+        </div>
+      </div>
+    </Router>
+  );
+}
+
+export default App;
+
+
+//SideBar.jsx (folder->components)
+
+import React from 'react';
+import { Link } from 'react-router-dom';
+import '../App.css'; 
+
+const SideBar = () => {
+  return (
+    <div className="sidebar p-3">
+      <h4 className="mb-4">Menu</h4>
+      <hr></hr>
+      <ul className="nav flex-column">
+        <li className="nav-item">
+          <Link to="/profile" className="nav-link">Profile</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/" className="nav-link">Dashboard</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/settings" className="nav-link">Settings</Link>
+        </li>
+        <li className="nav-item">
+          <Link to="/logout" className="nav-link">Logout</Link>
+        </li>
+      </ul>
+    </div>
+  );
+};
+
+export default SideBar;
+
+
+//Dashboard.jsx (folder->pages)
+
+import React, { useEffect, useState } from 'react';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import { getEnergySummary, getSpaceWiseEnergy } from '../services/api';
+
+const Dashboard = () => {
+  const [lineChartOptions, setLineChartOptions] = useState(null);
+  const [pieChartOptions, setPieChartOptions] = useState(null);
+
+  const startTime = '2023-06-01T00:00:00';
+  const endTime = '2025-05-31T23:00:00';
+  const spaceIds = [1, 2, 3, 4, 6];
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const lineData = await getEnergySummary(spaceIds, startTime, endTime);
+
+        const categories = lineData.hourlyAggregated.map(item => {
+          const date = new Date(item.timestamp);
+          return date.toLocaleString(undefined, {
+            hour12: false, year: '2-digit', month: '2-digit',
+            day: '2-digit', hour: '2-digit', minute: '2-digit'
+          });
+        });
+
+        const values = lineData.hourlyAggregated.map(item => item.energyConsumed);
+
+        setLineChartOptions({
+          chart: { height: 400, width: 1200 },
+          title: { text: 'Energy Consumption Over Time' },
+          xAxis: {
+            categories,
+            labels: { rotation: 45, style: { fontSize: '10px' } }
+          },
+          yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+          series: [{ name: 'Date', data: values }],
+          tooltip: {
+            formatter: function () {
+              return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+            }
+          }
+        });
+
+        const pieData = await getSpaceWiseEnergy(spaceIds, startTime, endTime);
+        const pieSeries = pieData.totalBySpace
+          .sort((a, b) => b.energyConsumed - a.energyConsumed)
+          .slice(0, 5)
+          .map(space => ({
+            name: `Space ${space.spaceId}`,
+            y: space.energyConsumed
+          }));
+
+        setPieChartOptions({
+          chart: { type: 'pie', height: 300, width: 500 },
+          title: { text: 'Top 5 Spaces by Energy Consumption' },
+          series: [{ name: 'Energy Consumed (kWh)', data: pieSeries }],
+          tooltip: { pointFormat: '{series.name}: <b>{point.y:.2f} kWh</b>' },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              dataLabels: {
+                enabled: true,
+                format: '<b>{point.name}</b>: {point.percentage:.1f} %'
+              }
+            }
+          }
+        });
+
+      } catch (error) {
+        console.error("Error loading charts:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  return (
+    <div>
+      <h2>Dashboard</h2>
+      <div className="mb-4">
+        {lineChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={lineChartOptions} />
+        ) : <p>Loading line chart...</p>}
+      </div>
+      <div>
+        {pieChartOptions ? (
+          <HighchartsReact highcharts={Highcharts} options={pieChartOptions} />
+        ) : <p>Loading pie chart...</p>}
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
+
+//Settings.jsx (folder->pages)
+
+import React, { useState, useEffect } from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import { getSingleSite, addSite } from '../services/api'; // Ensure both are correctly exported from api.js
+
+const Settings = () => {
+  const [formData, setFormData] = useState({
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: '',
+  });
+
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    const fetchSite = async () => {
+      try {
+        const site = await getSingleSite(); // ✅ Use the correct function name
+        setFormData(site);
+      } catch (error) {
+        console.error('Failed to fetch site data', error);
+      }
+    };
+    fetchSite();
+  }, []);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+  try {
+    await addSite(formData);
+    alert('Site saved successfully!');
+    setIsEditing(false);
+  } catch (error) {
+    console.error('Error saving site:', error.response?.data || error.message);
+    alert('Error saving site');
+  }
+};
+
+
+  return (
+    <div className="container mt-4">
+      <div className="card p-4">
+        <h4>Add New Site</h4>
+        <form>
+          {['siteName', 'address', 'contactPerson', 'contactEmail', 'contactPhone'].map((field) => (
+            <div className="mb-3" key={field}>
+              <label htmlFor={field} className="form-label">
+                {field === 'siteName' ? 'Site Name' :
+                 field === 'address' ? 'Address' :
+                 field === 'contactPerson' ? 'Contact Person' :
+                 field === 'contactEmail' ? 'Contact Email' : 'Contact Phone'}
+              </label>
+              <input
+                type={field === 'contactEmail' ? 'email' : field === 'contactPhone' ? 'tel' : 'text'}
+                className="form-control"
+                id={field}
+                name={field}
+                value={formData[field]}
+                onChange={handleChange}
+                disabled={!isEditing}
+              />
+            </div>
+          ))}
+
+          {!isEditing ? (
+            <button type="button" className="btn btn-primary" onClick={handleEdit}>
+              Edit
+            </button>
+          ) : (
+            <div className="d-flex gap-2">
+              <button type="button" className="btn btn-success" onClick={handleSave}>
+                Save
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handleCancel}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Settings;
+
+
+//Profile.jsx (folder->pages)
+
+import React from 'react';
+
+const Profile = () => {
+  return <h2>Profile Page</h2>;
+};
+
+export default Profile;
+
+
+//Logout.jsx (folder->pages)
+
+import React from 'react';
+
+const Logout = () => {
+  return <h2>You have been logged out.</h2>;
+};
+
+export default Logout;
+
+//SiteForm.jsx (folder->components)
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const BASE_URL = 'http://localhost:5076/api/Sites';
+
+const SiteForm = ({ siteId = null }) => {
+  const [formData, setFormData] = useState({
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: ''
+  });
+
+  const [submitStatus, setSubmitStatus] = useState('');
+
+  // 🔁 Fetch existing site data if siteId is provided (for editing)
+  useEffect(() => {
+    const fetchSite = async () => {
+      try {
+        if (siteId) {
+          const response = await axios.get(`${BASE_URL}/${siteId}`);
+          setFormData(response.data);
+        }
+      } catch (error) {
+        console.error('Error loading site:', error);
+      }
+    };
+    fetchSite();
+  }, [siteId]);
+
+  const handleChange = (e) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (siteId) {
+        // 🔄 Update existing site
+        await axios.put(`${BASE_URL}/${siteId}`, { siteId, ...formData });
+        setSubmitStatus('Site updated successfully!');
+      } else {
+        // 🆕 Create new site
+        await axios.post(BASE_URL, formData);
+        setSubmitStatus('Site created successfully!');
+      }
+      setFormData({
+        siteName: '',
+        address: '',
+        contactPerson: '',
+        contactEmail: '',
+        contactPhone: ''
+      });
+    } catch (err) {
+      console.error(err);
+      setSubmitStatus('Submission failed.');
+    }
+  };
+
+  return (
+    <div className="card p-4 mb-4" style={{ maxWidth: '600px' }}>
+      <h5>{siteId ? 'Edit Site' : 'Create New Site'}</h5>
+      <form onSubmit={handleSubmit}>
+        {['siteName', 'address', 'contactPerson', 'contactEmail', 'contactPhone'].map((field, i) => (
+          <div className="mb-3" key={i}>
+            <label className="form-label">{field.replace(/([A-Z])/g, ' $1')}</label>
+            <input
+              type={field === 'contactEmail' ? 'email' : 'text'}
+              className="form-control"
+              name={field}
+              value={formData[field]}
+              onChange={handleChange}
+              required={field === 'siteName'}
+            />
+          </div>
+        ))}
+        <button type="submit" className="btn btn-primary">Submit</button>
+        {submitStatus && <p className="mt-2 text-success">{submitStatus}</p>}
+      </form>
+    </div>
+  );
+};
+
+export default SiteForm;
+
+
+//app.css
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #3a465d;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sidebar {
+  background-color: #0d0e0e;
+  color: rgb(255, 255, 255);
+  width: 200px;
+  height: 100vh;
+}
+
+.sidebar .nav-link {
+  color: rgb(255, 255, 255);
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.sidebar .nav-link:hover {
+  color: #61dafb; /* Light blue hover effect */
+  text-decoration: none;
+}
+
+
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #f8f9fa;
+  padding: 12px 24px;
+  border-bottom: 1px solid #dee2e6;
+  z-index: 1000;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 28px;
+  color:#000000;
+  font-weight: bold;
+}
+
+.mt-5 {
+  margin-top: 70px !important;
+}
+
+----------------------------------------------------------------------------------------
+//Login.jsx
+// src/pages/Login.jsx
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import './Login.css';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
+import axios from 'axios';
+
+const Login = () => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const navigate = useNavigate();
+
+  const validateForm = () => {
+    const errors = {};
+    if (!username.trim()) {
+      errors.username = 'Username is required';
+    }
+
+    if (!password) {
+      errors.password = 'Password is required';
+    } else if (password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setFieldErrors({});
+
+    if (!validateForm()) return;
+
+    setLoading(true);
+    try {
+      const response = await axios.post('http://localhost:5059/api/Auth/login', {
+        username,
+        password
+      });
+
+      const token = response.data?.token;
+      const user = response.data?.username ?? 'Unknown';
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('isAuthenticated', 'true');
+
+      if (rememberMe) {
+        localStorage.setItem('rememberedUser', username);
+      } else {
+        localStorage.removeItem('rememberedUser');
+      }
+
+      setSuccess('Login successful.');
+      setTimeout(() => navigate('/dashboard'), 1000);
+    } catch (error) {
+      console.error('Login failed:', error);
+      setError('Invalid credentials or server error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="overlay" />
+      <div className="login-box" role="main" aria-labelledby="login-heading">
+        <h2 id="login-heading">Login</h2>
+        <form onSubmit={handleSubmit} noValidate>
+          <label htmlFor="username" className="visually-hidden">Username</label>
+          <input
+            id="username"
+            type="text"
+            placeholder="Enter Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            required
+            aria-required="true"
+            aria-invalid={!!fieldErrors.username}
+            aria-describedby="username-error"
+          />
+          {fieldErrors.username && (
+            <p className="error-msg" id="username-error">{fieldErrors.username}</p>
+          )}
+
+          <label htmlFor="password" className="visually-hidden">Password</label>
+          <div className="password-wrapper">
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Enter Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              aria-required="true"
+              aria-invalid={!!fieldErrors.password}
+              aria-describedby="password-error"
+            />
+            <button
+              type="button"
+              className="toggle-password"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword((show) => !show)}
+            >
+              {showPassword ? <VisibilityOff /> : <Visibility />}
+            </button>
+          </div>
+          {fieldErrors.password && (
+            <p className="error-msg" id="password-error">{fieldErrors.password}</p>
+          )}
+
+          <div className="options-row">
+            <label className="remember-me">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              Remember me
+            </label>
+            <a href="/forgot-password" className="forgot-password">Forgot password?</a>
+          </div>
+
+          {error && (
+            <p id="error-msg" className="error-msg" role="alert" aria-live="assertive">
+              {error}
+            </p>
+          )}
+
+          {success && (
+            <p className="success-msg" role="status" aria-live="polite">
+              {success}
+            </p>
+          )}
+          
+          <button
+            type="submit"
+            disabled={loading}
+            aria-busy={loading}
+            className={loading ? 'loading' : ''}
+          >
+            {loading ? (
+              <span className="spinner"></span>
+            ) : (
+              'Login'
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
+
+
+//Login.css
+/* src/pages/Login.css */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f0f2f5;
+}
+
+.login-page {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  background: url('../assets/bg.png') center/cover no-repeat;
+}
+
+/* Card container */
+.login-box {
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  padding: 40px 30px;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+  width: 320px;
+  text-align: center;
+  animation: fadeInUp 0.6s ease;
+}
+
+/* Header */
+.login-box h2 {
+  margin-bottom: 24px;
+  color: #333;
+  font-weight: 700;
+}
+
+/* Form */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Input fields */
+input {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1.5px solid #ccc;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+input:focus {
+  border-color: #2575fc;
+  outline: none;
+  box-shadow: 0 0 8px rgba(37, 117, 252, 0.3);
+}
+
+/* Password input with toggle */
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  flex-grow: 1;
+  padding-right: 40px;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: #666;
+  transition: color 0.3s ease;
+}
+
+.toggle-password:hover {
+  color: #2575fc;
+}
+
+/* Options row */
+.options-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.remember-me input {
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.forgot-password {
+  color: #2575fc;
+  text-decoration: none;
+}
+
+.forgot-password:hover {
+  text-decoration: underline;
+}
+
+/* Submit Button */
+button[type="submit"] {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 0;
+  background-color: #2575fc;
+  color: white;
+  font-weight: 600;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button[type="submit"]:hover:not(:disabled) {
+  background-color: #1a52d1;
+  transform: scale(1.02);
+}
+
+button[type="submit"]:disabled {
+  background-color: #7a9fff;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Spinner inside button when loading */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 3px solid white;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error message */
+.error-msg {
+  color: #e74c3c;
+  font-size: 0.9rem;
+  margin-top: -8px;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+/* Success message */
+.success-msg {
+  color: #2ecc71;
+  font-size: 0.9rem;
+  margin-top: -8px;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+/* Visually hidden for screen readers */
+.visually-hidden {
+  position: absolute !important;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap;
+}
+
+/* Responsive */
+@media (max-width: 360px) {
+  .login-box {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 40px 30px;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    width: 320px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-box {
+    padding: 24px 20px;
+  }
+
+  button[type="submit"] {
+    font-size: 1rem;
+    padding: 10px 0;
+  }
+}
+
+/* Animation on load */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+//ForgotPassword.jsx
+// src/pages/ForgotPassword.jsx
+import React, { useState } from 'react';
+import './Login.css'; // Reuse the same CSS for layout and styling
+
+const ForgotPassword = () => {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const validateEmail = (email) => {
+    // Basic email pattern
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!email.trim()) {
+      setError('Email is required');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      setError('Enter a valid email address');
+      return;
+    }
+
+    // You can call your reset API here
+    // e.g., await axios.post('/auth/forgot-password', { email });
+
+    setSuccess('Password reset link has been sent to your email.');
+  };
+
+  return (
+    <div className="login-page">
+      <div className="overlay" />
+      <div className="login-box" role="main" aria-labelledby="forgot-heading">
+        <h2 id="forgot-heading">Forgot Password</h2>
+        <form onSubmit={handleSubmit} noValidate>
+          <label htmlFor="email" className="visually-hidden">Email</label>
+          <input
+            id="email"
+            type="email"
+            placeholder="Enter your email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            aria-required="true"
+            aria-invalid={!!error}
+            aria-describedby="email-error"
+          />
+          {error && (
+            <p id="email-error" className="error-msg" role="alert">{error}</p>
+          )}
+
+          {success && (
+            <p className="success-msg" role="status" aria-live="polite">{success}</p>
+          )}
+
+          <button type="submit">Send Reset Link</button>
+        </form>
+
+        <p style={{ marginTop: '1rem' }}>
+          <a href="/" style={{ color: '#2575fc', textDecoration: 'underline' }}>
+            Back to Login
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default ForgotPassword;
+
+
+
+|Updated api.js
+// src/services/api.js
+import axios from 'axios';
+
+const BASE_URL = 'http://localhost:5059/api';
+
+// Create Axios instance
+const api = axios.create({
+  baseURL: BASE_URL
+});
+
+// Attach token automatically to requests (only if token exists)
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// ========== AUTH ========== //
+export const loginUser = async (username, password) => {
+  try {
+    const response = await api.post('/auth/login', { username, password });
+    return response.data;
+  } catch (error) {
+    console.error('Login API Error:', error);
+    throw error.response?.data || { message: 'Login failed' };
+  }
+};
+
+// ========== ENERGY SUMMARY ========== //
+export const getEnergySummary = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await api.get('/MeterReadings/energy-summary', {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('API Error (energy-summary):', error);
+    throw error.response?.data || { message: 'Failed to fetch energy summary' };
+  }
+};
+
+// ========== SPACE-WISE ENERGY ========== //
+export const getSpaceWiseEnergy = async (spaceIds, startTime, endTime) => {
+  try {
+    const response = await api.get('/MeterReadings/space-wise-energy', {
+      params: { spaceIds, startTime, endTime }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('API Error (space-wise-energy):', error);
+    throw error.response?.data || { message: 'Failed to fetch space-wise energy' };
+  }
+};
+
+export default api;
+
+|Updated App.js
+import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+import SideBar from './components/SideBar';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+
+const AppContent = () => {
+  const location = useLocation();
+  const isAuthenticated = localStorage.getItem('isAuthenticated');
+
+  // Hide sidebar on login and forgot-password pages
+  const hideSidebarPaths = ['/login', '/forgot-password'];
+  const showSidebar = !hideSidebarPaths.includes(location.pathname);
+
+  return (
+    <div className="d-flex">
+      {showSidebar && <SideBar />}
+      <div className="flex-grow-1 p-4">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              isAuthenticated ? <Profile /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              isAuthenticated ? <Settings /> : <Navigate to="/login" />
+            }
+          />
+          <Route path="/logout" element={<Logout />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
+  );
+}
+
+export default App;
+
+
+DashboardFilters.jsx
+import React from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { TreeSelect } from 'antd';
+import 'antd/dist/reset.css';
+
+// Helper function to build tree structure from flat space data
+export const buildTreeData = (spaces) => {
+    const idToNodeMap = {};
+    const tree = [];
+
+    for (const space of spaces) {
+        idToNodeMap[space.spaceId] = {
+            title: space.spaceName,
+            value: space.spaceId.toString(),
+            key: space.spaceId.toString(),
+            children: []
+        };
+    }
+
+    for (const space of spaces) {
+        const node = idToNodeMap[space.spaceId];
+        if (space.parentSpaceId && idToNodeMap[space.parentSpaceId]) {
+            idToNodeMap[space.parentSpaceId].children.push(node);
+        } else {
+            tree.push(node);
+        }
+    }
+
+    const sortTree = (nodes) => {
+        nodes.sort((a, b) => a.title.localeCompare(b.title));
+        for (const node of nodes) {
+            if (node.children?.length) {
+                sortTree(node.children);
+            }
+        }
+    };
+
+    sortTree(tree);
+    return tree;
+};
+
+// Space selector dropdown
+export const SpaceSelector = ({ treeData, selectedValues, onChange }) => (
+    <div className="mb-3">
+        <label className="form-label">Select Spaces:</label>
+        <TreeSelect
+            treeData={treeData}
+            value={selectedValues.map(String)}
+            onChange={onChange}
+            multiple
+            treeCheckable
+            showCheckedStrategy={TreeSelect.SHOW_PARENT}
+            placeholder="Please select"
+            style={{ width: '100%' }}
+            allowClear
+        />
+    </div>
+);
+
+// Time Filter and manual Date Picker
+export const TimeRangeSelector = ({
+    timeRange, setTimeRange,
+    startDate, setStartDate,
+    endDate, setEndDate
+}) => {
+    const isCustomRange = timeRange === 'custom';
+
+    const minSelectableDate = new Date('2023-06-01T00:00:00');
+    const maxSelectableDate = new Date('2025-05-31T23:59:59');
+
+    // Generate time options based on selected date
+    const generateTimeOptions = (selectedDate) => {
+        const times = [];
+        const baseDate = new Date(selectedDate);
+        baseDate.setHours(0, 0, 0, 0);
+        for (let i = 0; i <= (23 * 60 + 45); i += 15) {
+            times.push(new Date(baseDate.getTime() + i * 60000));
+        }
+        const lastMinute = new Date(baseDate);
+        lastMinute.setHours(23, 59, 0, 0);
+        times.push(lastMinute);
+        return times;
+    };
+
+    const startTimeOptions = generateTimeOptions(startDate || new Date());
+    const endTimeOptions = generateTimeOptions(endDate || new Date());
+
+    return (
+        <div className="row mb-4">
+            <div className="col-md-4">
+                <label className="form-label fw-bold">Time Range:</label>
+                <select
+                    className="form-select"
+                    value={timeRange}
+                    onChange={(e) => setTimeRange(e.target.value)}
+                >
+                    <option value="today">Today</option>
+                    <option value="thisWeek">This Week</option>
+                    <option value="thisMonth">This Month</option>
+                    <option value="thisYear">This Year</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+
+            <div className="col-md-4">
+                <label className="form-label fw-bold">Start Date & Time:</label>
+                <DatePicker
+                    selected={startDate}
+                    onChange={(date) => {
+                        setStartDate(date);
+                        if (endDate < date) {
+                            setEndDate(date);
+                        }
+                    }}
+                    showTimeSelect
+                    timeIntervals={15}
+                    includeTimes={startTimeOptions}
+                    dateFormat="dd/MM/yy HH:mm"
+                    className="form-control"
+                    disabled={!isCustomRange}
+                    minDate={minSelectableDate}
+                    maxDate={maxSelectableDate}
+                    showYearDropdown
+                    scrollableYearDropdown
+                    timeCaption="Time"
+                />
+            </div>
+
+            <div className="col-md-4">
+                <label className="form-label fw-bold">End Date & Time:</label>
+                <DatePicker
+                    selected={endDate}
+                    onChange={setEndDate}
+                    showTimeSelect
+                    timeIntervals={15}
+                    includeTimes={endTimeOptions}
+                    dateFormat="dd/MM/yy HH:mm"
+                    className="form-control"
+                    disabled={!isCustomRange}
+                    minDate={startDate || minSelectableDate}
+                    maxDate={maxSelectableDate}
+                    showYearDropdown
+                    scrollableYearDropdown
+                    timeCaption="Time"
+                />
+            </div>
+        </div>
+    );
+};
+
+// Default wrapper component to use in Dashboard.jsx
+const DashboardFilters = ({
+    treeData,
+    selectedValues,
+    setSelectedValues,
+    timeRange,
+    setTimeRange,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate
+}) => (
+    <>
+        <SpaceSelector
+            treeData={treeData}
+            selectedValues={selectedValues}
+            onChange={setSelectedValues}
+        />
+        <TimeRangeSelector
+            timeRange={timeRange}
+            setTimeRange={setTimeRange}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+        />
+    </>
+);
+
+export default DashboardFilters;
+
+
+HeatMapChart.jsx:
+import React from 'react';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import 'highcharts/modules/heatmap';
+import 'highcharts/modules/exporting';
+
+
+const HeatMapChart = ({ options }) => {
+  if (!options) return null;
+
+  return (
+    <div>
+      <HighchartsReact
+        highcharts={Highcharts}
+        options={options}
+      />
+    </div>
+  );
+};
+
+export default HeatMapChart;
+
+
+LineChart.jsx:
+import React from 'react';
+import HighchartsReact from 'highcharts-react-official';
+import Highcharts from 'highcharts';
+
+const LineChart = ({ options }) => {
+  return options ? (
+    <HighchartsReact highcharts={Highcharts} options={options} />
+  ) : (
+    <p>No line chart data available.</p>
+  );
+};
+
+export default LineChart;
+
+LoadingSpinner.jsx:
+import React from 'react';
+
+const Loadingspinner = () => (
+    <div className="text-center py-5">
+        <div className="spinner-border text-primary" role = "status">
+        </div>
+    </div>
+);
+
+export default Loadingspinner;
+
+PieChart.jsx:
+import React from 'react';
+import HighchartsReact from 'highcharts-react-official';
+import Highcharts from 'highcharts';
+
+const PieChart = ({options}) => {
+    return options ? (
+        <HighchartsReact highcharts={Highcharts} options={options} />
+    ) : (
+        <p> No pie chart data available.</p>
+    );
+};
+
+export default PieChart;
+
+SideBar.jsx:
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import '../App.css';
+
+const SideBar = () => {
+  return (
+    <div className="sidebar bg-light p-3" style={{ width: '200px', height: '100vh' }}>
+      <h5 className="mb-4">Menu</h5>
+      <ul className="nav flex-column">
+        <li className="nav-item">
+          <NavLink to="/" className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}>
+            Dashboard
+          </NavLink>
+        </li>
+        <li className="nav-item">
+          <NavLink to="/profile" className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}>
+            Profile
+          </NavLink>
+        </li>      
+        <li className="nav-item">
+          <NavLink to="/settings" className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}>
+            Settings
+          </NavLink>
+        </li>
+        <li className="nav-item">
+          <NavLink to="/logout" className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}>
+            Logout
+          </NavLink>
+        </li>
+      </ul>
+    </div>
+  );
+};
+
+export default SideBar;
+
+Dashboard.jsx:
+import React, { useEffect, useState } from 'react';
+import LineChart from '../components/LineChart';
+import PieChart from '../components/PieChart';
+import HeatMapChart from '../components/HeatMapChart';
+import DashboardFilters from '../components/DashboardFilters';
+import LoadingSpinner from '../components/LoadingSpinner';
+import {
+  getEnergySummary,
+  getSpaceWiseEnergy,
+  getAllSpaces
+} from '../services/api';
+import {
+  startOfToday,
+  startOfMonth,
+  startOfYear
+} from 'date-fns';
+
+const buildTreeData = (spaces) => {
+  const idToNodeMap = {};
+  const tree = [];
+
+  for (const space of spaces) {
+    idToNodeMap[space.spaceId] = {
+      title: space.spaceName,
+      value: space.spaceId.toString(),
+      key: space.spaceId.toString(),
+      children: []
+    };
+  }
+
+  for (const space of spaces) {
+    const node = idToNodeMap[space.spaceId];
+    if (space.parentSpaceId && idToNodeMap[space.parentSpaceId]) {
+      idToNodeMap[space.parentSpaceId].children.push(node);
+    } else {
+      tree.push(node);
+    }
+  }
+
+  const sortTree = (nodes) => {
+    nodes.sort((a, b) => a.title.localeCompare(b.title));
+    nodes.forEach(node => node.children?.length && sortTree(node.children));
+  };
+
+  sortTree(tree);
+  return tree;
+};
+
+const Dashboard = () => {
+  const [treeData, setTreeData] = useState([]);
+  const [selectedValues, setSelectedValues] = useState([]);
+  const [timeRange, setTimeRange] = useState('thisMonth');
+  const [startDate, setStartDate] = useState(startOfMonth(new Date()));
+  const [endDate, setEndDate] = useState(new Date());
+
+  const [lineChartOptions, setLineChartOptions] = useState(null);
+  const [pieChartOptions, setPieChartOptions] = useState(null);
+  const [heatMapOptions, setHeatMapOptions] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getAllSpaces()
+      .then(spaces => setTreeData(buildTreeData(spaces)))
+      .catch(err => console.error('Error fetching spaces:', err));
+  }, []);
+
+  useEffect(() => {
+    const now = new Date();
+    let newStart, newEnd;
+
+    switch (timeRange) {
+      case 'today':
+        newStart = new Date('2025-05-31T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+      break;
+
+      case 'thisWeek':
+        newStart = new Date('2025-05-25T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'thisMonth':
+        newStart = new Date('2025-05-01T00:00:00');
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'thisYear':
+        newStart = startOfYear(new Date('2025-01-01T00:00:00'));
+        newEnd = new Date('2025-05-31T23:59:59');
+        break;
+
+      case 'custom':
+        return; // Don't update for custom
+      default:
+        newStart = startOfMonth(now);
+        newEnd = now;
+    }
+
+    setStartDate(newStart);
+    setEndDate(newEnd);
+  }, [timeRange]);
+
+  const fetchData = async () => {
+    if (!selectedValues.length) {
+      setLineChartOptions(null);
+      setPieChartOptions(null);
+      setHeatMapOptions(null);
+      return;
+    }
+
+    setLoading(true);
+    const s = startDate.toISOString();
+    const e = endDate.toISOString();
+
+    try {
+      const [lineRes, pieRes] = await Promise.all([
+        getEnergySummary(selectedValues, s, e),
+        getSpaceWiseEnergy(selectedValues, s, e)
+      ]);
+
+      // Line Chart
+      const categories = lineRes.hourlyAggregated.map(i =>
+        new Date(i.timestamp).toLocaleString(undefined, {
+          hour12: false, year: '2-digit', month: '2-digit',
+          day: '2-digit', hour: '2-digit', minute: '2-digit'
+        })
+      );
+      const values = lineRes.hourlyAggregated.map(i => i.energyConsumed);
+
+      setLineChartOptions({
+        chart: { type: 'line', height: 400 },
+        title: { text: 'Energy Consumption Over Time' },
+        xAxis: {
+          categories,
+          labels: { rotation: 45, style: { fontSize: '10px' } }
+        },
+        yAxis: { title: { text: 'Energy Consumed (kWh)' } },
+        series: [{ name: 'Energy', data: values }],
+        tooltip: {
+          formatter() {
+            return `<b>${this.x}</b><br/>${this.series.name}: <b>${this.y.toFixed(2)} kWh</b>`;
+          }
+        }
+      });
+
+      // Pie Chart
+      const pieData = pieRes.totalBySpace
+        .sort((a, b) => b.energyConsumed - a.energyConsumed)
+        .slice(0, 5)
+        .map(space => ({
+          name: space.spaceName || 'Unnamed Space',
+          y: space.energyConsumed
+        }));
+
+      setPieChartOptions({
+        chart: { type: 'pie', height: 300 },
+        title: { text: 'Top 5 Spaces by Energy Consumption' },
+        series: [{
+          type: 'pie',
+          name: 'Energy Consumed (kWh)',
+          colorByPoint: true,
+          data: pieData
+        }],
+        tooltip: { pointFormat: '<b>{point.name}</b>: {point.y:.2f} kWh' },
+        plotOptions: {
+          pie: {
+            allowPointSelect: true,
+            cursor: 'pointer',
+            showInLegend: true,
+            dataLabels: {
+              enabled: true,
+              format: '<b>{point.name}</b>: {point.percentage:.1f} %'
+            }
+          }
+        }
+      });
+
+      // Heatmap
+      const heatmapDataRaw = lineRes.hourlyAggregated.map(entry => {
+        const date = new Date(entry.timestamp);
+        const hour = date.getHours();
+        const day = date.toLocaleDateString();
+        return { day, hour, energy: entry.energyConsumed };
+      });
+
+      const days = [...new Set(heatmapDataRaw.map(d => d.day))];
+      const heatmapData = heatmapDataRaw.map(d => [
+        d.hour,              // x - hour
+        days.indexOf(d.day), // y - day index
+        d.energy             // value
+      ]);
+
+      setHeatMapOptions({
+        chart: { type: 'heatmap', height: 400 },
+        title: { text: 'Hourly Energy Consumption Heatmap' },
+        xAxis: {
+          categories: [...Array(24).keys()],
+          title: { text: 'Hour of Day' }
+        },
+        yAxis: {
+          categories: days,
+          title: { text: 'Date' },
+          reversed: true
+        },
+        colorAxis: {
+          min: 0,
+          minColor: '#FFFFFF',
+          maxColor: '#003399'
+        },
+        series: [{
+          name: 'Energy Consumed (kWh)',
+          borderWidth: 1,
+          data: heatmapData,
+          dataLabels: {
+            enabled: false
+          }
+        }],
+        tooltip: {
+          formatter: function () {
+            return `<b>${days[this.point.y]}</b><br/>Hour: <b>${this.point.x}</b><br/>Energy: <b>${this.point.value.toFixed(2)} kWh</b>`;
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Chart data fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [selectedValues, startDate, endDate]);
+
+  return (
+    <div className="container py-4">
+      <h2 className="mb-4">Dashboard</h2>
+
+      <DashboardFilters
+        treeData={treeData}
+        selectedValues={selectedValues}
+        setSelectedValues={setSelectedValues}
+        timeRange={timeRange}
+        setTimeRange={setTimeRange}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+      />m
+
+      {loading ? (
+        <LoadingSpinner />
+      ) : (
+        <div className="grid gap-4" style={{ display: 'grid', gridTemplateRows: 'auto auto', rowGap: '2rem' }}>
+          <div>
+            <LineChart options={lineChartOptions} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+            <div>
+              <PieChart options={pieChartOptions} />
+            </div>
+            <div>
+              <HeatMapChart options={heatMapOptions} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
+
+App.js:
+import React from 'react';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+import SideBar from './components/SideBar';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+
+const AppContent = () => {
+  const location = useLocation();
+  const isAuthenticated = localStorage.getItem('isAuthenticated');
+
+  // Hide sidebar on login and forgot-password pages
+  const hideSidebarPaths = ['/login', '/forgot-password'];
+  const showSidebar = !hideSidebarPaths.includes(location.pathname);
+
+  return (
+    <div className="d-flex">
+      {showSidebar && <SideBar />}
+      <div className="flex-grow-1 p-4">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              isAuthenticated ? <Dashboard /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              isAuthenticated ? <Profile /> : <Navigate to="/login" />
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              isAuthenticated ? <Settings /> : <Navigate to="/login" />
+            }
+          />
+          <Route path="/logout" element={<Logout />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
+  );
+}
+
+export default App;
+
+
+
+
+
+
+
+//siteform
+import React, { useEffect, useState } from 'react';
+import { getSingleSite, createSite, updateSite, deleteSite } from '../services/api';
+
+const SiteForm = () => {
+  const [formData, setFormData] = useState({
+    siteId: '',
+    siteName: '',
+    address: '',
+    contactPerson: '',
+    contactEmail: '',
+    contactPhone: ''
+  });
+
+  const [originalData, setOriginalData] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [siteExists, setSiteExists] = useState(false);
+
+  useEffect(() => {
+    const fetchSite = async () => {
+      try {
+        const site = await getSingleSite();
+        const mappedSite = {
+          siteId: site.siteId || site.siteID || site.id,
+          siteName: site.siteName || '',
+          address: site.address || '',
+          contactPerson: site.contactPerson || '',
+          contactEmail: site.contactEmail || '',
+          contactPhone: site.contactPhone || ''
+        };
+
+        setFormData(mappedSite);
+        setOriginalData(mappedSite);
+        setSiteExists(true);
+      } catch (err) {
+        console.error('No site found:', err);
+        setSiteExists(false);
+      }
+    };
+
+    fetchSite();
+  }, []);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAdd = async () => {
+    try {
+      const { siteId, ...siteData } = formData; 
+      siteData.createdAt = new Date().toISOString();
+      const created = await createSite(siteData);
+
+      const newSiteId = created.siteId || created.siteID || created.id;
+      if (!newSiteId) throw new Error("Site ID missing in response");
+
+      const updated = { ...created, siteId: newSiteId };
+
+      setFormData(updated);
+      setOriginalData(updated);
+      setSiteExists(true);
+      setStatusMessage('Site added successfully.');
+    } catch (err) {
+      console.error('Add error:', err);
+      const msg = err.response?.data?.message || 'Failed to add site.';
+      setStatusMessage(msg);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      if (!formData.siteId) {
+        setStatusMessage("Cannot update: site ID missing.");
+        return;
+      }
+      await updateSite(formData.siteId, formData);
+      setOriginalData(formData);
+      setEditMode(false);
+      setStatusMessage('Changes saved successfully.');
+    } catch (err) {
+      console.error('Update error:', err);
+      const msg = err.response?.data?.message || 'Failed to save changes.';
+      setStatusMessage(msg);
+    }
+  };
+
+  const handleCancel = () => {
+    setFormData(originalData);
+    setEditMode(false);
+    setStatusMessage('Changes canceled.');
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deleteSite(formData.siteId);
+      setFormData({
+        siteId: '',
+        siteName: '',
+        address: '',
+        contactPerson: '',
+        contactEmail: '',
+        contactPhone: ''
+      });
+      setOriginalData(null);
+      setEditMode(false);
+      setSiteExists(false);
+      setStatusMessage('Site deleted.');
+    } catch (err) {
+      console.error('Delete error:', err);
+      const msg = err.response?.data?.message || 'Failed to delete site.';
+      setStatusMessage(msg);
+    }
+  };
+
+  return (
+    <div className="main-content card p-4 mb-4" style={{ maxWidth: '600px' }}>
+      <h4 className="mb-3">Site Settings</h4>
+
+      <form>
+        {/* Show Site ID only when site exists */}
+        {siteExists && (
+          <div className="mb-3">
+            <label className="form-label">Site ID</label>
+            <input type="text" className="form-control" value={formData.siteId} disabled />
+          </div>
+        )}
+
+        <div className="mb-3">
+          <label className="form-label">Site Name</label>
+          <input
+            type="text"
+            className="form-control"
+            name="siteName"
+            value={formData.siteName}
+            onChange={handleChange}
+            disabled={!editMode && siteExists}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Address</label>
+          <input
+            type="text"
+            className="form-control"
+            name="address"
+            value={formData.address}
+            onChange={handleChange}
+            disabled={!editMode && siteExists}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Person</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPerson"
+            value={formData.contactPerson}
+            onChange={handleChange}
+            disabled={!editMode && siteExists}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Email</label>
+          <input
+            type="email"
+            className="form-control"
+            name="contactEmail"
+            value={formData.contactEmail}
+            onChange={handleChange}
+            disabled={!editMode && siteExists}
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Contact Phone</label>
+          <input
+            type="text"
+            className="form-control"
+            name="contactPhone"
+            value={formData.contactPhone}
+            onChange={handleChange}
+            disabled={!editMode && siteExists}
+          />
+        </div>
+
+        <div className="d-flex gap-2">
+          {!siteExists && (
+            <button type="button" className="btn btn-success" onClick={handleAdd}>Add</button>
+          )}
+
+          {siteExists && editMode && (
+            <>
+              <button type="button" className="btn btn-primary" onClick={handleSave}>Save</button>
+              <button type="button" className="btn btn-secondary" onClick={handleCancel}>Cancel</button>
+              <button type="button" className="btn btn-danger" onClick={handleDelete}>Delete</button>
+            </>
+          )}
+
+          {siteExists && !editMode && (
+            <button type="button" className="btn btn-primary" onClick={() => setEditMode(true)}>Edit</button>
+          )}
+        </div>
+
+        {statusMessage && <p className="mt-3 text-info">{statusMessage}</p>}
+      </form>
+    </div>
+  );
+};
+
+export default SiteForm;
+
+
+
+
+
+//api.js
+// ===== SITE API =====
+
+export const createSite = async (siteData) => {
+  const response = await api.post(`/Sites`, siteData);
+  return response.data;
+};
+
+export const getSingleSite = async () => {
+  const response = await api.get(`/Sites/Single`);
+  return response.data;
+};
+
+export const updateSite = async (id, siteData) => {
+  const response = await api.put(`/Sites/${id}`, siteData); 
+  return response.data;
+};
+
+export const deleteSite = async (siteId) => {
+  const response = await api.delete(`/Sites/${siteId}`); 
+  return response.data;
+};
+
+export default api;
+
